@@ -1,6 +1,6 @@
 /**
  * Exports single or multiple X-Reading Reconciliation Reports to styled Excel (.xls) format
- * @param {Object|Array} dataOverride Single reconciliation object or array of objects
+ * @param {Object|Array} dataOverride
  */
 export const exportCsv = (dataOverride = null) => {
   // Default structure matching updated Prisma Schema

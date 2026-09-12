@@ -4,7 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { io } from 'socket.io-client';
 import NotificationPanel from './NotificationPanel';
 
-const SOCKET_SERVER_URL = 'http://localhost:5000'; // Match your Node.js backend port
+const SOCKET_SERVER_URL = 'http://localhost:5000';
 
 const demandForecastData = [
   { month: 'Jan', demand: 22 },

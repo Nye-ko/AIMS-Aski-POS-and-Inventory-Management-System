@@ -27,32 +27,68 @@ enum ReconciliationStatus {
   COMPLETED
 }
 
+enum OrderStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
+}
+
 // MODELS
 
 model User {
-  id              Int              @id @default(autoincrement())
-  username        String           @unique
-  password        String
-  role            Role             @default(CASHIER)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  transactions    Transaction[]
-  reconciliations Reconciliation[]
-}
-
-model Product {
   id               Int               @id @default(autoincrement())
-  name             String
-  price            Decimal           @db.Decimal(10, 2)
-  category         String            @default("Uncategorized")
-  stock            Int               @default(0)
-  expiryDate       DateTime?
-  sku              String?           @unique
+  username         String            @unique
+  password         String
+  role             Role              @default(CASHIER)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
-  transactionItems TransactionItem[]
+  transactions     Transaction[]
+  reconciliations  Reconciliation[]
+  purchaseOrders   PurchaseOrder[]
+  receivingReports ReceivingReport[]
+  purchaseReturns  PurchaseReturn[]
+}
+
+model Supplier {
+  id               Int               @id @default(autoincrement())
+  name             String
+  contactPerson    String?
+  email            String?
+  phone            String?
+  address          String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  products         Product[]
+  purchaseOrders   PurchaseOrder[]
+  receivingReports ReceivingReport[]
+  purchaseReturns  PurchaseReturn[]
+}
+
+model Product {
+  id                   Int                   @id @default(autoincrement())
+  name                 String
+  barcode              String?               @unique
+  price                Decimal               @db.Decimal(10, 2)
+  costPrice            Decimal               @default(0) @db.Decimal(10, 2)
+  category             String                @default("Uncategorized")
+  stock                Int                   @default(0)
+  minStock             Int                   @default(10)
+  expiryDate           DateTime?
+  sku                  String?               @unique
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  supplierId           Int?
+  supplier             Supplier?             @relation(fields: [supplierId], references: [id])
+
+  transactionItems     TransactionItem[]
+  purchaseOrderItems   PurchaseOrderItem[]
+  receivingReportItems ReceivingReportItem[]
+  purchaseReturnItems  PurchaseReturnItem[]
+
+  @@index([barcode, name])
 }
 
 model Transaction {
@@ -81,6 +117,7 @@ model TransactionItem {
   productId     Int
   product       Product     @relation(fields: [productId], references: [id])
 
+  barcode       String?
   name          String
   unitPrice     Decimal     @db.Decimal(10, 2)
   quantity      Int
@@ -89,7 +126,7 @@ model TransactionItem {
 
 model Reconciliation {
   id                 Int                  @id @default(autoincrement())
-  reportNo           String               @unique // e.g. X-Reading / Trans No
+  reportNo           String               @unique
   reconciliationDate DateTime             @default(now())
 
   cashierId          Int
@@ -110,17 +147,106 @@ model Reconciliation {
   p10                Int                  @default(0)
   p5                 Int                  @default(0)
   p1                 Int                  @default(0)
-  p0_50              Int                  @default(0) // ₱0.50 coin
-  p0_25              Int                  @default(0) // ₱0.25 coin
-  p0_10              Int                  @default(0) // ₱0.10 coin
-  p0_05              Int                  @default(0) // ₱0.05 coin
-  p0_01              Int                  @default(0) // ₱0.01 coin
+  p0_50              Int                  @default(0)
+  p0_25              Int                  @default(0)
+  p0_10              Int                  @default(0)
+  p0_05              Int                  @default(0)
+  p0_01              Int                  @default(0)
 
-  posCash            Decimal              @default(0) @db.Decimal(10, 2) // System Expected Cash
-  cashierCash        Decimal              @default(0) @db.Decimal(10, 2) // Total Counted Cash
-  shortOver          Decimal              @default(0) @db.Decimal(10, 2) // cashierCash - posCash
+  posCash            Decimal              @default(0) @db.Decimal(10, 2)
+  cashierCash        Decimal              @default(0) @db.Decimal(10, 2)
+  shortOver          Decimal              @default(0) @db.Decimal(10, 2)
 
   status             ReconciliationStatus @default(COMPLETED)
   notes              String?              @db.Text
   createdAt          DateTime             @default(now())
+}
+
+model PurchaseOrder {
+  id          Int                 @id @default(autoincrement())
+  poNumber    String              @unique
+  status      OrderStatus         @default(PENDING)
+  totalAmount Decimal             @db.Decimal(10, 2)
+
+  supplierId  Int
+  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+
+  createdById Int
+  createdBy   User                @relation(fields: [createdById], references: [id])
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  items       PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id              Int           @id @default(autoincrement())
+  purchaseOrderId Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  productId       Int
+  product         Product       @relation(fields: [productId], references: [id])
+
+  quantity        Int
+  unitCost        Decimal       @db.Decimal(10, 2)
+  subtotal        Decimal       @db.Decimal(10, 2)
+}
+
+model ReceivingReport {
+  id           Int                 @id @default(autoincrement())
+  rrNumber     String              @unique
+  deliveryNote String?
+
+  supplierId   Int
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+
+  receivedById Int
+  receivedBy   User                @relation(fields: [receivedById], references: [id])
+
+  receivedAt   DateTime            @default(now())
+
+  items        ReceivingReportItem[]
+}
+
+model ReceivingReportItem {
+  id                Int             @id @default(autoincrement())
+  receivingReportId Int
+  receivingReport   ReceivingReport @relation(fields: [receivingReportId], references: [id], onDelete: Cascade)
+
+  productId         Int
+  product           Product         @relation(fields: [productId], references: [id])
+
+  quantity          Int
+  unitCost          Decimal         @db.Decimal(10, 2)
+  subtotal          Decimal         @db.Decimal(10, 2)
+}
+
+model PurchaseReturn {
+  id          Int                  @id @default(autoincrement())
+  returnNo    String               @unique
+  reason      String               @db.Text
+
+  supplierId  Int
+  supplier    Supplier             @relation(fields: [supplierId], references: [id])
+
+  createdById Int
+  createdBy   User                @relation(fields: [createdById], references: [id])
+
+  createdAt   DateTime             @default(now())
+
+  items       PurchaseReturnItem[]
+}
+
+model PurchaseReturnItem {
+  id               Int            @id @default(autoincrement())
+  purchaseReturnId Int
+  purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+
+  productId        Int
+  product          Product        @relation(fields: [productId], references: [id])
+
+  quantity         Int
+  unitCost         Decimal        @db.Decimal(10, 2)
+  subtotal         Decimal        @db.Decimal(10, 2)
 }

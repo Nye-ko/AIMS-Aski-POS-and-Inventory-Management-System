@@ -12,10 +12,18 @@ const prisma = new PrismaClient({ adapter });
 async function seedData() {
   try {
     console.log('Cleaning up old database records...');
+    // Delete items in reverse dependency order to prevent foreign key errors
+    await prisma.purchaseReturnItem.deleteMany();
+    await prisma.purchaseReturn.deleteMany();
+    await prisma.receivingReportItem.deleteMany();
+    await prisma.receivingReport.deleteMany();
+    await prisma.purchaseOrderItem.deleteMany();
+    await prisma.purchaseOrder.deleteMany();
     await prisma.transactionItem.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.reconciliation.deleteMany();
     await prisma.product.deleteMany();
+    await prisma.supplier.deleteMany();
     await prisma.user.deleteMany();
     console.log('Database cleared.');
 
@@ -38,25 +46,36 @@ async function seedData() {
 
     console.log('Users seeded.');
 
-    // 2. Seed Products (With Expiry Dates)
+    // 2. Seed Suppliers
+    const suppliersData = [
+      { name: 'Alpha Distributing Co.', contactPerson: 'John Doe', email: 'alpha@dist.com', phone: '09171234567' },
+      { name: 'Global Goods Inc.', contactPerson: 'Jane Smith', email: 'global@goods.com', phone: '09181234568' },
+      { name: 'Prime Wholesale Ltd.', contactPerson: 'Bob Johnson', email: 'prime@wholesale.com', phone: '09191234569' },
+    ];
+
+    await prisma.supplier.createMany({ data: suppliersData });
+    const dbSuppliers = await prisma.supplier.findMany();
+    console.log('Suppliers seeded.');
+
+    // 3. Seed Products (With Barcodes, Cost Price, & Suppliers)
     const productsData = [
-      { name: 'Whole Milk 1L', price: 95.0, category: 'Dairy', stock: 40, sku: 'DRY-001', expiryDate: new Date('2026-08-15') },
-      { name: 'Cheddar Cheese Block 250g', price: 180.0, category: 'Dairy', stock: 25, sku: 'DRY-002', expiryDate: new Date('2026-10-30') },
-      { name: 'Sliced Bread (Whole Wheat)', price: 75.0, category: 'Bakery', stock: 30, sku: 'BKY-001', expiryDate: new Date('2026-09-05') },
-      { name: 'Canned Tuna in Oil 180g', price: 55.0, category: 'Canned Goods', stock: 100, sku: 'CND-001', expiryDate: new Date('2028-06-30') },
-      { name: 'Instant Noodles (Chicken)', price: 18.0, category: 'Pantry', stock: 150, sku: 'PNT-001', expiryDate: new Date('2027-03-15') },
-      { name: 'Paracetamol 500mg (Box of 100)', price: 350.0, category: 'Pharmacy', stock: 20, sku: 'MED-001', expiryDate: new Date('2027-11-20') },
-      { name: 'Multi-Surface Disinfectant Spray', price: 220.0, category: 'Household', stock: 35, sku: 'HSH-001', expiryDate: new Date('2027-05-10') },
-      { name: 'White Latex Paint 4L', price: 1150.0, category: 'Paints', stock: 15, sku: 'PT-001', expiryDate: new Date('2027-08-31') },
-      { name: 'PVC Pipe Cement Glue 100ml', price: 120.0, category: 'Hardware', stock: 50, sku: 'HW-003', expiryDate: new Date('2026-12-31') },
-      { name: 'Silicon Sealant Clear', price: 280.0, category: 'Hardware', stock: 40, sku: 'HW-004', expiryDate: new Date('2027-02-28') },
+      { barcode: '4800001001', name: 'Whole Milk 1L', price: 95.0, costPrice: 80.0, category: 'Dairy', stock: 40, sku: 'DRY-001', expiryDate: new Date('2026-08-15'), supplierId: dbSuppliers[0].id },
+      { barcode: '4800001002', name: 'Cheddar Cheese Block 250g', price: 180.0, costPrice: 150.0, category: 'Dairy', stock: 25, sku: 'DRY-002', expiryDate: new Date('2026-10-30'), supplierId: dbSuppliers[0].id },
+      { barcode: '4800001003', name: 'Sliced Bread (Whole Wheat)', price: 75.0, costPrice: 60.0, category: 'Bakery', stock: 30, sku: 'BKY-001', expiryDate: new Date('2026-09-05'), supplierId: dbSuppliers[1].id },
+      { barcode: '4800001004', name: 'Canned Tuna in Oil 180g', price: 55.0, costPrice: 42.0, category: 'Canned Goods', stock: 100, sku: 'CND-001', expiryDate: new Date('2028-06-30'), supplierId: dbSuppliers[1].id },
+      { barcode: '4800001005', name: 'Instant Noodles (Chicken)', price: 18.0, costPrice: 13.0, category: 'Pantry', stock: 150, sku: 'PNT-001', expiryDate: new Date('2027-03-15'), supplierId: dbSuppliers[1].id },
+      { barcode: '4800001006', name: 'Paracetamol 500mg (Box of 100)', price: 350.0, costPrice: 280.0, category: 'Pharmacy', stock: 20, sku: 'MED-001', expiryDate: new Date('2027-11-20'), supplierId: dbSuppliers[2].id },
+      { barcode: '4800001007', name: 'Multi-Surface Disinfectant Spray', price: 220.0, costPrice: 175.0, category: 'Household', stock: 35, sku: 'HSH-001', expiryDate: new Date('2027-05-10'), supplierId: dbSuppliers[2].id },
+      { barcode: '4800001008', name: 'White Latex Paint 4L', price: 1150.0, costPrice: 920.0, category: 'Paints', stock: 15, sku: 'PT-001', expiryDate: new Date('2027-08-31'), supplierId: dbSuppliers[2].id },
+      { barcode: '4800001009', name: 'PVC Pipe Cement Glue 100ml', price: 120.0, costPrice: 90.0, category: 'Hardware', stock: 50, sku: 'HW-003', expiryDate: new Date('2026-12-31'), supplierId: dbSuppliers[2].id },
+      { barcode: '4800001010', name: 'Silicon Sealant Clear', price: 280.0, costPrice: 210.0, category: 'Hardware', stock: 40, sku: 'HW-004', expiryDate: new Date('2027-02-28'), supplierId: dbSuppliers[2].id },
     ];
 
     await prisma.product.createMany({ data: productsData });
     const dbProducts = await prisma.product.findMany();
     console.log('Products seeded.');
 
-    // 3. Seed 30 Days of Transactions & Reconciliations
+    // 4. Seed 30 Days of Transactions & Reconciliations
     console.log('Generating 30 days of sales transactions...');
     let transactionCounter = 1000;
     let reportCounter = 100;
@@ -89,6 +108,7 @@ async function seedData() {
 
           return {
             productId: p.id,
+            barcode: p.barcode, // Captures barcode snapshot at sale time
             name: p.name,
             unitPrice: unitPrice,
             quantity: qty,

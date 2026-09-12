@@ -10,7 +10,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 // Import Models
-const ProductModel = require('./models/Product').ProductModel;
+const { ProductModel, prisma } = require('./models/Product');
 const TransactionModel = require('./models/Transaction');
 const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
@@ -28,9 +28,9 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
-  }
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
+  },
 });
 
 app.set('io', io);
@@ -44,7 +44,7 @@ io.on('connection', (socket) => {
 
 // --- ROUTES ---
 
-// 1. Get All Products
+// 1. Get All Products (Includes supplier relations and computed status)
 app.get('/api/products', async (req, res) => {
   try {
     const products = await ProductModel.findAll();
@@ -55,7 +55,33 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// 2. Search Product by Barcode or 6-digit Code
+// 2. Create New Product
+app.post('/api/products', async (req, res) => {
+  try {
+    const product = await ProductModel.create(req.body);
+    res.status(201).json(product);
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ error: 'Failed to create product' });
+  }
+});
+
+// 3. Update Product Stock (Add Stock)
+app.patch('/api/products/:id/stock', async (req, res) => {
+  try {
+    const { quantity } = req.body;
+    if (!quantity || isNaN(quantity)) {
+      return res.status(400).json({ error: 'Valid stock quantity is required' });
+    }
+    const updatedProduct = await ProductModel.addStock(req.params.id, quantity);
+    res.json(updatedProduct);
+  } catch (error) {
+    console.error('Error updating stock:', error);
+    res.status(500).json({ error: 'Failed to update stock' });
+  }
+});
+
+// 4. Search Product by Barcode or 6-digit Code
 app.get('/api/products/barcode/:code', async (req, res) => {
   try {
     const products = await ProductModel.findByBarcode(req.params.code);
@@ -69,12 +95,26 @@ app.get('/api/products/barcode/:code', async (req, res) => {
   }
 });
 
-// 3. Create New Transaction (Checkout)
+// 5. Get All Suppliers (For inventory dropdowns)
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const suppliers = await prisma.supplier.findMany({
+      orderBy: { name: 'asc' },
+    });
+    res.json(suppliers);
+  } catch (error) {
+    console.error('Error fetching suppliers:', error);
+    res.status(500).json({ error: 'Failed to fetch suppliers' });
+  }
+});
+
+// --- TRANSACTIONS ROUTES ---
+
+// Create New Transaction (Checkout)
 app.post('/api/transactions', async (req, res) => {
   try {
     const io = req.app.get('io');
-    // Pass req.body and io to the model
-    const result = await TransactionModel.createCheckout(req.body, io); 
+    const result = await TransactionModel.createCheckout(req.body, io);
 
     // Broadcast updated financial metrics over WebSocket
     const updatedFinance = await FinanceModel.getSummary();
@@ -87,7 +127,7 @@ app.post('/api/transactions', async (req, res) => {
   }
 });
 
-// 4. Get All Transactions
+// Get All Transactions
 app.get('/api/transactions', async (req, res) => {
   try {
     const transactions = await TransactionModel.findAll();
@@ -98,21 +138,21 @@ app.get('/api/transactions', async (req, res) => {
   }
 });
 
-// Get Dashboard Summary Cards Data
+// --- DASHBOARD ROUTE ---
 app.get('/api/dashboard/summary', async (req, res) => {
   try {
     const [todayRevenue, lowStockCount, dailySalesTrend, expiryWatchList] = await Promise.all([
       DashboardModel.getTodayRevenue(),
       DashboardModel.getLowStockCount(10), // Threshold = 10 items
       DashboardModel.getDailySalesTrend(),
-      DashboardModel.getExpiryWatchList(30)
+      DashboardModel.getExpiryWatchList(30),
     ]);
 
     res.json({
       todayRevenue,
       lowStockCount,
       dailySalesTrend,
-      expiryWatchList
+      expiryWatchList,
     });
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
@@ -163,7 +203,7 @@ app.get('/api/reconciliation/expected-cash', async (req, res) => {
     return res.status(500).json({
       error: 'Failed to calculate expected cash',
       expectedCash: 0,
-      grossSales: 0
+      grossSales: 0,
     });
   }
 });
