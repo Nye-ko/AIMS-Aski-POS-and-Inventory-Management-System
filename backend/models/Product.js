@@ -8,10 +8,41 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const ProductModel = {
-  // Fetch all products ordered by ID
+  // Fetch all products with supplier details & computed statuses for Inventory List
   findAll: async () => {
-    return await prisma.product.findMany({
+    const products = await prisma.product.findMany({
+      include: {
+        supplier: true,
+      },
       orderBy: { id: 'asc' },
+    });
+
+    const now = new Date();
+
+    return products.map((p) => {
+      let status = 'In Stock';
+      if (p.expiryDate && new Date(p.expiryDate) < now) {
+        status = 'Expired';
+      } else if (p.stock <= p.minStock) {
+        status = 'Low Stock';
+      }
+
+      return {
+        id: p.id,
+        name: p.name,
+        barcode: p.barcode,
+        sku: p.sku,
+        category: p.category,
+        stock: p.stock,
+        minStock: p.minStock,
+        unitCost: Number(p.costPrice),
+        sellingPrice: Number(p.price),
+        expiryDate: p.expiryDate,
+        createdAt: p.createdAt,
+        supplierId: p.supplierId,
+        supplierName: p.supplier ? p.supplier.name : 'N/A',
+        status,
+      };
     });
   },
 
@@ -19,6 +50,7 @@ const ProductModel = {
   findById: async (id) => {
     return await prisma.product.findUnique({
       where: { id: parseInt(id) },
+      include: { supplier: true },
     });
   },
 
@@ -34,18 +66,33 @@ const ProductModel = {
     });
   },
 
-  // Create a new product
+  // Create a new product with all inventory fields
   create: async (data) => {
     return await prisma.product.create({
       data: {
-        barcode: data.barcode,
         name: data.name,
-        price: parseFloat(data.price),
+        barcode: data.barcode || null,
+        sku: data.sku || null,
         category: data.category || 'Uncategorized',
+        price: parseFloat(data.price),
+        costPrice: parseFloat(data.costPrice || 0),
         stock: parseInt(data.stock) || 0,
+        minStock: parseInt(data.minStock) || 10,
+        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+        supplierId: data.supplierId ? parseInt(data.supplierId) : null,
+      },
+    });
+  },
+
+  // Add stock increment to existing product
+  addStock: async (id, quantity) => {
+    return await prisma.product.update({
+      where: { id: parseInt(id) },
+      data: {
+        stock: { increment: parseInt(quantity) },
       },
     });
   },
 };
 
-module.exports = { ProductModel, prisma }; // Exporting prisma instance for transactions
+module.exports = { ProductModel, prisma };
