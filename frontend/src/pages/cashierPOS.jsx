@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Search, Trash2, ChevronDown, Plus, Minus, Store,
-  Lock, Clock, Banknote, X, Percent, Download
+  Lock, Clock, Banknote, X, Percent, Download, Printer
 } from 'lucide-react';
 import { exportCsv } from '../utils/exportCsv';
+import { printThermalReceipt } from '../utils/printReceipt';
 
 export default function CashierPOS() {
   // LIVE BACKEND STATES
@@ -233,6 +234,20 @@ const handleConfirmSale = async () => {
 
     if (response.ok) {
       alert(`Transaction successful! PHP ${currentTotalAmount.toFixed(2)} recorded.`);
+      
+      // PRINT THERMAL RECEIPT
+      printThermalReceipt({
+        cashier: 'Cashier',
+        transactionId: responseData.id || Date.now(),
+        items: cart,
+        subtotal: currentSubtotal,
+        discountAmount: currentDiscountAmount,
+        discountPercent: discountPercent,
+        totalAmount: currentTotalAmount,
+        paymentMethod: paymentMethod,
+        amountPaid: currentTotalAmount
+      }, '80mm');
+      
       handleClearCart();
       fetchProducts(); // Refresh stock counts from server
     } else {
@@ -583,12 +598,40 @@ const handleConfirmSale = async () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-2 shrink-0">
+        <div className="grid grid-cols-3 gap-2 shrink-0">
           <button
             onClick={handleClearCart}
             className="py-2 bg-[#C2B8B3] hover:bg-[#b2a7a1] text-gray-800 text-xs font-bold rounded-lg transition-colors cursor-pointer"
           >
             Clear
+          </button>
+          <button
+            onClick={() => {
+              if (cart.length === 0) {
+                alert("Cart is empty!");
+                return;
+              }
+              const currentSubtotal = cart.reduce(
+                (sum, item) => sum + Number(item.unitPrice) * item.quantity,
+                0
+              );
+              const currentDiscountAmount = (currentSubtotal * discountPercent) / 100;
+              const currentTotalAmount = Math.max(0, currentSubtotal - currentDiscountAmount);
+              
+              printThermalReceipt({
+                cashier: 'Cashier',
+                items: cart,
+                subtotal: currentSubtotal,
+                discountAmount: currentDiscountAmount,
+                totalAmount: currentTotalAmount,
+                paymentMethod: paymentMethod
+              }, '80mm');
+            }}
+            disabled={cart.length === 0}
+            className="py-2 bg-[#9B8B7E] hover:bg-[#8B7B6E] text-white text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+          >
+            <Printer className="w-3 h-3" />
+            Print
           </button>
           <button
             onClick={handleConfirmSale}
