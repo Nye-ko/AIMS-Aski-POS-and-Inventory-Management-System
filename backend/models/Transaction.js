@@ -43,7 +43,7 @@ const TransactionModel = {
     }
 
     // 2. Execute database transaction
-    const transaction = await prisma.$transaction(async (tx) => {
+    const { transaction, stockUpdates } = await prisma.$transaction(async (tx) => {
       // Create Transaction and line items
       const newTx = await tx.transaction.create({
         data: {
@@ -70,20 +70,38 @@ const TransactionModel = {
         },
       });
 
-      // Decrement product stock in PostgreSQL
+      // Decrement product stock in PostgreSQL; capture post-sale stock so the
+      // caller can detect low-stock crossings for email alerts.
+      const stockUpdates = [];
       for (const item of items) {
-        await tx.product.update({
+        const updated = await tx.product.update({
           where: { id: Number(item.productId) },
           data: { stock: { decrement: Number(item.quantity) } },
         });
+        stockUpdates.push({
+          id: updated.id,
+          name: updated.name,
+          category: updated.category,
+          newStock: updated.stock,
+          minStock: updated.minStock,
+          quantity: Number(item.quantity),
+        });
       }
 
-      return newTx;
+      return { transaction: newTx, stockUpdates };
     });
 
     if (io) {
       io.emit('transaction_created', transaction);
     }
+
+    // Attach stockUpdates onto the returned object as a non-enumerable property
+    // so JSON responses stay identical to today's behaviour but the route
+    // handler can still read it for the low-stock crossing alert.
+    Object.defineProperty(transaction, '_stockUpdates', {
+      value: stockUpdates,
+      enumerable: false,
+    });
 
     return transaction;
   },
