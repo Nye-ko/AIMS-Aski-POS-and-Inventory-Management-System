@@ -63,7 +63,7 @@ export default function Finance() {
     } catch (err) {
       console.error('Failed to load financial data:', err);
       setError('Failed to connect to backend server at http://localhost:5000');
-    } fontFinally: {
+    } finally {
       setLoading(false);
     }
   };

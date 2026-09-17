@@ -1,13 +1,12 @@
 import React from 'react'
 import { Routes, Route, Outlet} from 'react-router-dom'
-import CashierPOS from './pages/CashierPOS'
+import CashierPOS from './pages/cashierPOS'
 import Login from './pages/ims/login'
 import AdminDashboard  from './pages/ims/adminDashboard'
 import InventoryList  from './pages/ims/inventoryList'
 import Demand  from './pages/ims/demand'
 import Finance  from './pages/ims/finance'
 import Sidebar from './pages/ims/sidebar'
-import NewPos from './pages/pos'
 
 
 function AppLayout (){
@@ -65,7 +64,6 @@ export default function App() {
     <Routes>
       <Route path="/pos" element={<CashierPOS />} />
       <Route path="/" element={<Login />} />
-      <Route path="/newPos" element={<NewPos />} />
 
       <Route element={<AppLayout />}>
         <Route path="/adminDashboard" element={<AdminDashboard />} />
