@@ -6,16 +6,17 @@ import {
   RotateCcw, 
   Truck, 
   Search, 
-  ChevronDown, 
-  X, 
-  CheckSquare, 
-  Square,
+  ChevronDown,
+  X,
   BarChart3,
   PackagePlus,
   Barcode,
   Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import PurchaseOrderModal from './PurchaseOrderModal';
+import ReceivingReportModal from './ReceivingReportModal';
+import PurchaseReturnModal from './PurchaseReturnModal';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -141,11 +142,12 @@ export default function InventorySystem() {
       </header>
 
       {activeTab === 'inventory' && (
-        <InventoryPage 
-          products={products} 
-          setProducts={setProducts} 
-          suppliers={suppliers} 
+        <InventoryPage
+          products={products}
+          setProducts={setProducts}
+          suppliers={suppliers}
           exportToExcel={exportToExcel}
+          onDataChanged={fetchInitialData}
         />
       )}
 
@@ -164,9 +166,12 @@ export default function InventorySystem() {
 // ==========================================
 // INVENTORY PAGE COMPONENT
 // ==========================================
-function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
+function InventoryPage({ products, setProducts, suppliers, exportToExcel, onDataChanged }) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
+  const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
+  const [isReceivingReportOpen, setIsReceivingReportOpen] = useState(false);
+  const [isPurchaseReturnOpen, setIsPurchaseReturnOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -349,6 +354,30 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
           >
             <PackagePlus className="w-4 h-4 text-indigo-600" />
             <span>Add Stock</span>
+          </button>
+
+          <button
+            onClick={() => setIsPurchaseOrderOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 text-amber-700 border border-amber-200 font-bold text-xs rounded-xl hover:bg-amber-100 transition shadow-sm cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-amber-600" />
+            <span>Create Purchase Order</span>
+          </button>
+
+          <button
+            onClick={() => setIsReceivingReportOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-teal-50 text-teal-700 border border-teal-200 font-bold text-xs rounded-xl hover:bg-teal-100 transition shadow-sm cursor-pointer"
+          >
+            <Truck className="w-4 h-4 text-teal-600" />
+            <span>Create Receiving Report</span>
+          </button>
+
+          <button
+            onClick={() => setIsPurchaseReturnOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl hover:bg-rose-100 transition shadow-sm cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4 text-rose-600" />
+            <span>Create Purchase Return</span>
           </button>
 
           <button
@@ -586,6 +615,24 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
           </table>
         </div>
       </div>
+
+      <PurchaseOrderModal
+        isOpen={isPurchaseOrderOpen}
+        onClose={() => setIsPurchaseOrderOpen(false)}
+        products={products}
+      />
+
+      <ReceivingReportModal
+        isOpen={isReceivingReportOpen}
+        onClose={() => setIsReceivingReportOpen(false)}
+        onSaved={onDataChanged}
+      />
+
+      <PurchaseReturnModal
+        isOpen={isPurchaseReturnOpen}
+        onClose={() => setIsPurchaseReturnOpen(false)}
+        onSaved={onDataChanged}
+      />
     </div>
   );
 }
@@ -595,35 +642,11 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
 // ==========================================
 function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
-  const [selectedProductIds, setSelectedProductIds] = useState([]);
-  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  const [returnDetails, setReturnDetails] = useState({
-    returnQty: 1,
-    reason: 'Damaged'
-  });
 
   const supplierProducts = useMemo(() => {
     if (!selectedSupplierId) return [];
     return products.filter(p => p.supplierId === Number(selectedSupplierId));
   }, [products, selectedSupplierId]);
-
-  const toggleSelectProduct = (id) => {
-    if (selectedProductIds.includes(id)) {
-      setSelectedProductIds(selectedProductIds.filter(item => item !== id));
-    } else {
-      setSelectedProductIds([...selectedProductIds, id]);
-    }
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedProductIds.length === supplierProducts.length) {
-      setSelectedProductIds([]);
-    } else {
-      setSelectedProductIds(supplierProducts.map(p => p.id));
-    }
-  };
 
   const handleExportReceivingReport = () => {
     if (!selectedSupplierId) {
@@ -646,46 +669,6 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
 
     const supplier = suppliers.find(s => s.id === Number(selectedSupplierId));
     exportToExcel(data, `Receiving_Report_${supplier?.name?.replace(/\s+/g, '_')}`);
-  };
-
-  const handleGeneratePurchaseReturn = async (e) => {
-    e.preventDefault();
-    if (selectedProductIds.length === 0) {
-      alert("No products selected for Purchase Return.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/purchase-returns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productIds: selectedProductIds,
-          returnQty: Number(returnDetails.returnQty),
-          reason: returnDetails.reason,
-          supplierId: Number(selectedSupplierId)
-        })
-      });
-
-      if (!response.ok) throw new Error(`HTTP error status ${response.status}`);
-
-      const { updatedProducts, returnRecords } = await response.json();
-
-      setProducts(prev => prev.map(p => {
-        const updated = updatedProducts.find(u => u.id === p.id);
-        return updated ? updated : p;
-      }));
-
-      exportToExcel(returnRecords, `Purchase_Return_${Date.now()}`);
-      setIsReturnModalOpen(false);
-      setSelectedProductIds([]);
-      alert("Purchase Return processed and database updated!");
-    } catch (err) {
-      alert(`Error processing purchase return: ${err.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   return (
@@ -723,15 +706,6 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
               <Truck className="w-4 h-4 text-blue-600" />
               <span>Export Receiving Report</span>
             </button>
-
-            <button
-              onClick={() => setIsReturnModalOpen(true)}
-              disabled={selectedProductIds.length === 0}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl hover:bg-rose-100 transition disabled:opacity-50 cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4 text-rose-600" />
-              <span>Create Purchase Return ({selectedProductIds.length})</span>
-            </button>
           </div>
         </div>
       </div>
@@ -748,15 +722,6 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
               <tr>
-                <th className="p-3 w-10 text-center">
-                  <button onClick={toggleSelectAll} className="text-slate-500">
-                    {selectedProductIds.length === supplierProducts.length && supplierProducts.length > 0 ? (
-                      <CheckSquare className="w-4 h-4 text-blue-600" />
-                    ) : (
-                      <Square className="w-4 h-4" />
-                    )}
-                  </button>
-                </th>
                 <th className="p-3">Product Name</th>
                 <th className="p-3">Category</th>
                 <th className="p-3 text-center">Stock</th>
@@ -768,19 +733,9 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {supplierProducts.length > 0 ? (
                 supplierProducts.map(p => {
-                  const isChecked = selectedProductIds.includes(p.id);
                   const stockVal = getStockValue(p);
                   return (
-                    <tr key={p.id} className={`hover:bg-slate-50 transition ${isChecked ? 'bg-blue-50/40' : ''}`}>
-                      <td className="p-3 text-center">
-                        <button onClick={() => toggleSelectProduct(p.id)} className="text-slate-500">
-                          {isChecked ? (
-                            <CheckSquare className="w-4 h-4 text-blue-600" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </button>
-                      </td>
+                    <tr key={p.id} className="hover:bg-slate-50 transition">
                       <td className="p-3 font-semibold text-slate-900">{p.name}</td>
                       <td className="p-3">{p.category}</td>
                       <td className="p-3 text-center font-bold">{stockVal}</td>
@@ -792,7 +747,7 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
                 })
               ) : (
                 <tr>
-                  <td colSpan="7" className="p-6 text-center text-slate-400 font-semibold">
+                  <td colSpan="6" className="p-6 text-center text-slate-400 font-semibold">
                     {selectedSupplierId ? 'No products found for this supplier.' : 'Please select a supplier from the dropdown.'}
                   </td>
                 </tr>
@@ -801,75 +756,6 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
           </table>
         </div>
       </div>
-
-      {/* MODAL: PURCHASE RETURN */}
-      {isReturnModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-md w-full border border-slate-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-rose-600" />
-                Process Purchase Return
-              </h3>
-              <button onClick={() => setIsReturnModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleGeneratePurchaseReturn} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Items Selected</label>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700">
-                  {selectedProductIds.length} item(s) selected for return
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Return Quantity (Per Product)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={returnDetails.returnQty}
-                  onChange={(e) => setReturnDetails({ ...returnDetails, returnQty: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-semibold"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Reason for Return</label>
-                <select
-                  value={returnDetails.reason}
-                  onChange={(e) => setReturnDetails({ ...returnDetails, reason: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-semibold text-slate-800"
-                >
-                  <option value="Damaged">Damaged / Defective</option>
-                  <option value="Expired">Expired</option>
-                  <option value="Incorrect Item">Incorrect Item Sent</option>
-                  <option value="Overstock">Overstock Return</option>
-                </select>
-              </div>
-
-              <div className="pt-2 flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setIsReturnModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Processing...' : 'Generate & Update'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

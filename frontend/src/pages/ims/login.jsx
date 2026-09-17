@@ -1,10 +1,11 @@
 import React from 'react';
-import { 
-  Home, 
-  Settings, 
-  LogOut, 
-  Bell, 
-  Image as ImageIcon 
+import { useNavigate } from 'react-router-dom';
+import {
+  Home,
+  Settings,
+  LogOut,
+  Bell,
+  Image as ImageIcon
 } from 'lucide-react';
 import {
   LineChart,
@@ -72,8 +73,15 @@ const GREY_COLORS = [
 ];
 
 export default function Login() {
+  const navigate = useNavigate();
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    navigate('/adminDashboard');
+  };
+
   return (
-    
+
   <div>
       {/*  font import*/}
       <style>{`
@@ -108,7 +116,7 @@ export default function Login() {
           </h1>
 
           {/* Form */}
-          <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+          <form className="space-y-5" onSubmit={handleLogin}>
             
             {/* Username */}
             <div>

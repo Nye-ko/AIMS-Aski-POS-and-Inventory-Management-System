@@ -117,7 +117,7 @@ export default function CashierPOS() {
       return [...prevCart, {
         id: product.id,
         name: product.name,
-        unitPrice: Number(product.price) || 0,
+        unitPrice: Number(product.sellingPrice) || 0,
         quantity: 1
       }];
     });
@@ -458,7 +458,7 @@ const handleConfirmSale = async () => {
                   <div className="truncate font-semibold">{product.name}</div>
                   <div className="flex justify-between items-center mt-0.5">
                     <span className="text-gray-600 font-bold">
-                      PHP {Number(product.price || 0).toFixed(2)}
+                      PHP {Number(product.sellingPrice || 0).toFixed(2)}
                     </span>
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${product.stock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
                       Stock: {product.stock}

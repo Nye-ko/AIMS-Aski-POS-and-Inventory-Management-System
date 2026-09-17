@@ -60,7 +60,7 @@ class FinanceModel {
       totalVariance += variance;
       return {
         shift: `Shift #${rec.id || index + 1}`,
-        cashier: rec.user?.name || 'Cashier',
+        cashier: rec.cashier?.username || 'Cashier',
         variance,
         status: rec.status || (variance === 0 ? 'BALANCED' : variance < 0 ? 'SHORTAGE' : 'OVERAGE'),
       };

@@ -16,6 +16,12 @@ const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
 const DemandForecastModel = require('./models/DemandForecast');
 const FinanceModel = require('./models/FinanceModel');
+const { PurchaseOrderModel } = require('./models/PurchaseOrder');
+const { buildPurchaseOrderWorkbook } = require('./services/purchaseOrderExcel');
+const { ReceivingReportModel } = require('./models/ReceivingReport');
+const { buildReceivingReportWorkbook } = require('./services/receivingReportExcel');
+const { PurchaseReturnModel } = require('./models/PurchaseReturn');
+const { buildPurchaseReturnWorkbook } = require('./services/purchaseReturnExcel');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -67,13 +73,13 @@ app.post('/api/products', async (req, res) => {
 });
 
 // 3. Update Product Stock (Add Stock)
-app.patch('/api/products/:id/stock', async (req, res) => {
+app.patch('/api/products/:id/add-stock', async (req, res) => {
   try {
-    const { quantity } = req.body;
+    const { quantity, supplierId } = req.body;
     if (!quantity || isNaN(quantity)) {
       return res.status(400).json({ error: 'Valid stock quantity is required' });
     }
-    const updatedProduct = await ProductModel.addStock(req.params.id, quantity);
+    const updatedProduct = await ProductModel.addStock(req.params.id, quantity, supplierId);
     res.json(updatedProduct);
   } catch (error) {
     console.error('Error updating stock:', error);
@@ -105,6 +111,147 @@ app.get('/api/suppliers', async (req, res) => {
   } catch (error) {
     console.error('Error fetching suppliers:', error);
     res.status(500).json({ error: 'Failed to fetch suppliers' });
+  }
+});
+
+// --- PURCHASE ORDER ROUTES ---
+
+// Create a Purchase Order for one supplier from checked low-stock items
+app.post('/api/purchase-orders', async (req, res) => {
+  try {
+    const { supplierId, items, terms, remarks, preparedBy, createdById } = req.body;
+    const purchaseOrder = await PurchaseOrderModel.create({
+      supplierId,
+      items,
+      terms,
+      remarks,
+      preparedBy,
+      createdById,
+    });
+    res.status(201).json(purchaseOrder);
+  } catch (error) {
+    console.error('Error creating purchase order:', error);
+    res.status(400).json({ error: error.message || 'Failed to create purchase order' });
+  }
+});
+
+// Download the styled .xlsx for a saved Purchase Order
+app.get('/api/purchase-orders/:id/export', async (req, res) => {
+  try {
+    const purchaseOrder = await PurchaseOrderModel.findById(req.params.id);
+    if (!purchaseOrder) {
+      return res.status(404).json({ error: 'Purchase order not found' });
+    }
+
+    const workbook = await buildPurchaseOrderWorkbook(purchaseOrder);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${purchaseOrder.poNumber}.xlsx"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error exporting purchase order:', error);
+    res.status(500).json({ error: 'Failed to export purchase order' });
+  }
+});
+
+// Purchase Orders awaiting a Receiving Report
+app.get('/api/purchase-orders/pending', async (req, res) => {
+  try {
+    const pendingOrders = await PurchaseOrderModel.findPending();
+    res.json(pendingOrders);
+  } catch (error) {
+    console.error('Error fetching pending purchase orders:', error);
+    res.status(500).json({ error: 'Failed to fetch pending purchase orders' });
+  }
+});
+
+// --- RECEIVING REPORT ROUTES ---
+
+// File a Receiving Report against a pending Purchase Order (tops up stock/cost, closes the PO)
+app.post('/api/receiving-reports', async (req, res) => {
+  try {
+    const { purchaseOrderId, items, deliveryNote, invoiceNo, remarks, receivedById } = req.body;
+    const receivingReport = await ReceivingReportModel.create({
+      purchaseOrderId,
+      items,
+      deliveryNote,
+      invoiceNo,
+      remarks,
+      receivedById,
+    });
+    res.status(201).json(receivingReport);
+  } catch (error) {
+    console.error('Error creating receiving report:', error);
+    res.status(400).json({ error: error.message || 'Failed to create receiving report' });
+  }
+});
+
+// Download the styled .xlsx for a saved Receiving Report
+app.get('/api/receiving-reports/:id/export', async (req, res) => {
+  try {
+    const receivingReport = await ReceivingReportModel.findById(req.params.id);
+    if (!receivingReport) {
+      return res.status(404).json({ error: 'Receiving report not found' });
+    }
+
+    const workbook = await buildReceivingReportWorkbook(receivingReport);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${receivingReport.rrNumber}.xlsx"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error exporting receiving report:', error);
+    res.status(500).json({ error: 'Failed to export receiving report' });
+  }
+});
+
+// All Receiving Reports, for the "Create Purchase Return" picker
+app.get('/api/receiving-reports', async (req, res) => {
+  try {
+    const receivingReports = await ReceivingReportModel.findAll();
+    res.json(receivingReports);
+  } catch (error) {
+    console.error('Error fetching receiving reports:', error);
+    res.status(500).json({ error: 'Failed to fetch receiving reports' });
+  }
+});
+
+// --- PURCHASE RETURN ROUTES ---
+
+// File a Purchase Return against a Receiving Report (decrements product stock)
+app.post('/api/purchase-returns', async (req, res) => {
+  try {
+    const { receivingReportId, items, reason, remarks, createdById } = req.body;
+    const purchaseReturn = await PurchaseReturnModel.create({
+      receivingReportId,
+      items,
+      reason,
+      remarks,
+      createdById,
+    });
+    res.status(201).json(purchaseReturn);
+  } catch (error) {
+    console.error('Error creating purchase return:', error);
+    res.status(400).json({ error: error.message || 'Failed to create purchase return' });
+  }
+});
+
+// Download the styled .xlsx for a saved Purchase Return
+app.get('/api/purchase-returns/:id/export', async (req, res) => {
+  try {
+    const purchaseReturn = await PurchaseReturnModel.findById(req.params.id);
+    if (!purchaseReturn) {
+      return res.status(404).json({ error: 'Purchase return not found' });
+    }
+
+    const workbook = await buildPurchaseReturnWorkbook(purchaseReturn);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${purchaseReturn.returnNo}.xlsx"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error exporting purchase return:', error);
+    res.status(500).json({ error: 'Failed to export purchase return' });
   }
 });
 

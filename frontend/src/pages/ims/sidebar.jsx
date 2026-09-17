@@ -95,7 +95,7 @@ export default function Sidebar() {
 
         <div className={`flex gap-1.5 ${isSidebarCollapsed ? 'flex-col items-center' : 'flex-row'}`}>
           <button 
-            onClick={() => navigate('/pages/ims/login')}
+            onClick={() => navigate('/')}
             className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-rose-700 bg-rose-500/10 border border-rose-200/50 hover:bg-rose-500/20 transition-all"
           >
             <LogOut className="w-4 h-4 text-rose-600 shrink-0" />
