@@ -36,6 +36,9 @@ const ProductModel = {
         stock: p.stock,
         minStock: p.minStock,
         unitCost: Number(p.costPrice),
+        // Provide both keys so both new (`sellingPrice`) and legacy (`price`)
+        // consumers work without a frontend change.
+        price: Number(p.price),
         sellingPrice: Number(p.price),
         expiryDate: p.expiryDate,
         createdAt: p.createdAt,
@@ -92,6 +95,35 @@ const ProductModel = {
         stock: { increment: parseInt(quantity) },
       },
     });
+  },
+
+  // Update whitelisted product fields (currently used by PATCH /api/products/:id
+  // to set/edit expiry dates, minStock, etc.). Returns { before, after } so
+  // callers can detect crossings — e.g. an expiryDate entering the warning
+  // window — and dispatch alert emails accordingly.
+  update: async (id, patch) => {
+    const productId = parseInt(id);
+    const before = await prisma.product.findUnique({ where: { id: productId } });
+    if (!before) return { before: null, after: null };
+
+    const data = {};
+    if (patch.name !== undefined) data.name = patch.name;
+    if (patch.barcode !== undefined) data.barcode = patch.barcode || null;
+    if (patch.sku !== undefined) data.sku = patch.sku || null;
+    if (patch.category !== undefined) data.category = patch.category;
+    if (patch.price !== undefined) data.price = parseFloat(patch.price);
+    if (patch.costPrice !== undefined) data.costPrice = parseFloat(patch.costPrice);
+    if (patch.stock !== undefined) data.stock = parseInt(patch.stock);
+    if (patch.minStock !== undefined) data.minStock = parseInt(patch.minStock);
+    if (patch.expiryDate !== undefined) {
+      data.expiryDate = patch.expiryDate ? new Date(patch.expiryDate) : null;
+    }
+    if (patch.supplierId !== undefined) {
+      data.supplierId = patch.supplierId ? parseInt(patch.supplierId) : null;
+    }
+
+    const after = await prisma.product.update({ where: { id: productId }, data });
+    return { before, after };
   },
 };
 
