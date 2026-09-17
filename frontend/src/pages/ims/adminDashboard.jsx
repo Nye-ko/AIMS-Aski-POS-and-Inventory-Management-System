@@ -1,24 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Bell, Banknote, AlertTriangle } from 'lucide-react';
+import { Home, Bell, Banknote, AlertTriangle, Mail } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { io } from 'socket.io-client';
 import NotificationPanel from './NotificationPanel';
 
 const SOCKET_SERVER_URL = 'http://localhost:5000';
-
-const demandForecastData = [
-  { month: 'Jan', demand: 22 },
-  { month: 'Feb', demand: 16 },
-  { month: 'Mar', demand: 18 },
-  { month: 'Apr', demand: 36 },
-  { month: 'May', demand: 41 },
-  { month: 'June', demand: 22 },
-  { month: 'July', demand: 25 },
-  { month: 'Aug', demand: 40 },
-  { month: 'Sept', demand: 43 },
-  { month: 'Oct', demand: 51 },
-];
-
 
 export default function Dashboard() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -33,6 +19,81 @@ export default function Dashboard() {
   const [dailySalesData, setDailySalesData] = useState([]);
 
   const [expiryWatchList, setExpiryWatchList] = useState([])
+
+  // --- AI Demand Forecast (live) ---
+  const [forecast, setForecast] = useState(null); // { kpis, revenueTrajectory }
+  const [forecastError, setForecastError] = useState(null);
+
+  // --- SMTP alert banner state ---
+  const [alertBanner, setAlertBanner] = useState(null); // { type: 'success'|'error'|'info', text: string }
+  const [sendingLowStock, setSendingLowStock] = useState(false);
+  const [sendingExpiry, setSendingExpiry] = useState(false);
+  const [sendingForecast, setSendingForecast] = useState(false);
+
+  const flashAlert = (type, text) => {
+    setAlertBanner({ type, text });
+    window.clearTimeout(flashAlert._t);
+    flashAlert._t = window.setTimeout(() => setAlertBanner(null), 4000);
+  };
+
+  const sendLowStockAlert = async () => {
+    setSendingLowStock(true);
+    try {
+      const res = await fetch(`${SOCKET_SERVER_URL}/api/alerts/low-stock/send-now`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      if (body.count === 0) flashAlert('info', 'No low-stock items right now — nothing to email.');
+      else flashAlert('success', `Low-stock alert sent for ${body.count} item${body.count === 1 ? '' : 's'}.`);
+    } catch (err) {
+      flashAlert('error', err.message || 'Failed to send low-stock alert.');
+    } finally {
+      setSendingLowStock(false);
+    }
+  };
+
+  const sendExpiryAlert = async () => {
+    setSendingExpiry(true);
+    try {
+      const res = await fetch(`${SOCKET_SERVER_URL}/api/alerts/expiry/send-now`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      if (body.count === 0) flashAlert('info', 'No products in the expiry window — nothing to email.');
+      else flashAlert('success', `Expiry alert sent for ${body.count} item${body.count === 1 ? '' : 's'}.`);
+    } catch (err) {
+      flashAlert('error', err.message || 'Failed to send expiry alert.');
+    } finally {
+      setSendingExpiry(false);
+    }
+  };
+
+  const sendForecastEmail = async () => {
+    setSendingForecast(true);
+    try {
+      const res = await fetch(`${SOCKET_SERVER_URL}/api/alerts/forecast/send-now`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      if (body.skipped) flashAlert('info', 'No forecast data to email right now.');
+      else flashAlert('success', 'AI forecast summary emailed.');
+    } catch (err) {
+      flashAlert('error', err.message || 'Failed to send forecast email.');
+    } finally {
+      setSendingForecast(false);
+    }
+  };
+
+  const fetchForecast = async () => {
+    try {
+      const res = await fetch(`${SOCKET_SERVER_URL}/api/forecast?days=30`);
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.message || `Forecast failed (${res.status})`);
+      setForecast(body.data);
+      setForecastError(null);
+    } catch (err) {
+      console.error('Forecast fetch failed:', err);
+      setForecastError(err.message || 'Forecast unavailable');
+      setForecast(null);
+    }
+  };
 
   useEffect(() => {
     // Initial REST fetch for dashboard data
@@ -59,6 +120,7 @@ export default function Dashboard() {
     };
 
     fetchDashboardData();
+    fetchForecast();
 
     //Connect to Socket.io server
     const socket = io(SOCKET_SERVER_URL);
@@ -71,6 +133,9 @@ export default function Dashboard() {
         .then((res) => res.json())
         .then((data) => setLowStockCount(data.lowStockCount))
         .catch(console.error);
+
+      // Every checkout invalidates the forecast — re-fetch.
+      fetchForecast();
     });
 
     return () => {
@@ -80,6 +145,21 @@ export default function Dashboard() {
 
   return (
     <>
+      {alertBanner && (
+        <div
+          role="alert"
+          className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl border shadow-xl backdrop-blur-md text-sm font-bold ${
+            alertBanner.type === 'success'
+              ? 'bg-emerald-100/95 border-emerald-300 text-emerald-800'
+              : alertBanner.type === 'error'
+                ? 'bg-rose-100/95 border-rose-300 text-rose-800'
+                : 'bg-sky-100/95 border-sky-300 text-sky-900'
+          }`}
+        >
+          {alertBanner.text}
+        </div>
+      )}
+
       {/* ===== HEADER ====== */}
       <header className="relative z-30 flex items-center justify-between bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-8 py-4 shadow-xl shadow-blue-500/10">
         <div className="flex items-center gap-3">
@@ -138,6 +218,15 @@ export default function Dashboard() {
               <h3 className="text-2xl font-black text-rose-700 tracking-tight relative z-10">
                 {lowStockCount} {lowStockCount === 1 ? 'Item' : 'Items'}
               </h3>
+              <button
+                type="button"
+                onClick={sendLowStockAlert}
+                disabled={sendingLowStock}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-slate-800/90 px-3 py-1 text-[11px] font-bold text-white shadow hover:bg-slate-900 disabled:opacity-60 relative z-10"
+              >
+                <Mail className="w-3 h-3" aria-hidden="true" />
+                {sendingLowStock ? 'Sending…' : 'Email alert now'}
+              </button>
             </div>
           </div>
 
@@ -257,27 +346,97 @@ export default function Dashboard() {
             <div className="absolute top-0 right-0 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-600/15 rounded-full blur-2xl pointer-events-none" />
 
-            <div className="mb-3 relative z-10">
-              <h3 className="text-lg font-bold text-white tracking-wide">AI Demand Forecast</h3>
-              <p className="text-xs text-slate-400">Predicted monthly unit requirements</p>
+            <div className="mb-3 relative z-10 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-white tracking-wide">AI Demand Forecast</h3>
+                <p className="text-xs text-slate-400">
+                  Projected revenue for the next 30 days
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
+                  </span>
+                  Live
+                </span>
+                <button
+                  type="button"
+                  onClick={sendForecastEmail}
+                  disabled={sendingForecast || !forecast}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/20 px-3 py-1 text-[11px] font-bold text-white hover:bg-white/20 disabled:opacity-60"
+                >
+                  <Mail className="w-3 h-3" aria-hidden="true" />
+                  {sendingForecast ? 'Sending…' : 'Email forecast'}
+                </button>
+              </div>
             </div>
 
-            <div className="h-52 w-full relative z-10">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={demandForecastData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="navyDemandGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.6} />
-                      <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                  <XAxis dataKey="month" stroke="#94a3b8" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} />
-                  <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(12px)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
-                  <Area type="monotone" dataKey="demand" stroke="#38bdf8" strokeWidth={2.5} fillOpacity={1} fill="url(#navyDemandGrad)" dot={{ r: 3.5, fill: '#38bdf8', stroke: '#0f172a', strokeWidth: 1.5 }} />
-                </AreaChart>
-              </ResponsiveContainer>
+            {forecast && forecast.kpis && (
+              <div className="grid grid-cols-3 gap-2 mb-3 relative z-10">
+                <div className="rounded-xl bg-white/5 border border-white/10 p-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Projected</p>
+                  <p className="text-sm font-black text-white tracking-tight">
+                    ₱{Number(forecast.kpis.projectedGross).toLocaleString('en-US')}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 border border-white/10 p-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Growth</p>
+                  <p className={`text-sm font-black tracking-tight ${
+                    String(forecast.kpis.grossGrowth).startsWith('-') ? 'text-rose-300' : 'text-emerald-300'
+                  }`}>
+                    {forecast.kpis.grossGrowth}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 border border-white/10 p-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">High-risk SKUs</p>
+                  <p className="text-sm font-black text-white tracking-tight">
+                    {forecast.kpis.highRiskSKUs}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="h-40 w-full relative z-10">
+              {forecastError ? (
+                <div className="h-full flex items-center justify-center text-xs text-rose-300 font-medium">
+                  {forecastError}
+                </div>
+              ) : !forecast ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400 font-medium">
+                  Loading AI forecast…
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={forecast.revenueTrajectory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="navyActualGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.55} />
+                        <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
+                      </linearGradient>
+                      <linearGradient id="navyForecastGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                    <XAxis dataKey="day" stroke="#94a3b8" fontSize={9} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} tickFormatter={(v) => `₱${Number(v).toLocaleString()}`} />
+                    <Tooltip
+                      formatter={(v, key) => [v == null ? '—' : `₱${Number(v).toLocaleString()}`, key === 'actual' ? 'Actual' : 'Forecast']}
+                      contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.92)', backdropFilter: 'blur(12px)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
+                    />
+                    <Area type="monotone" dataKey="actual" stroke="#38bdf8" strokeWidth={2.5} fillOpacity={1} fill="url(#navyActualGrad)" dot={false} connectNulls={false} />
+                    <Area type="monotone" dataKey="forecast" stroke="#a78bfa" strokeWidth={2.5} strokeDasharray="4 3" fillOpacity={1} fill="url(#navyForecastGrad)" dot={false} connectNulls={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4 mt-2 relative z-10 text-[10px] font-semibold text-slate-400">
+              <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-1 rounded bg-sky-400" />Actual</span>
+              <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] border-t-2 border-dashed border-violet-400" />Forecast</span>
             </div>
           </div>
 
@@ -285,9 +444,20 @@ export default function Dashboard() {
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 backdrop-blur-xl border border-slate-700/60 p-6 shadow-2xl shadow-slate-900/40 transition-all duration-300 flex flex-col flex-1 min-h-[220px]">
             <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="mb-3 relative z-10">
-              <h3 className="text-lg font-bold text-white tracking-wide">Expiry Watchlist</h3>
-              <p className="text-xs text-slate-400">Stock reaching shelf-life threshold soon</p>
+            <div className="mb-3 relative z-10 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-white tracking-wide">Expiry Watchlist</h3>
+                <p className="text-xs text-slate-400">Stock reaching shelf-life threshold soon</p>
+              </div>
+              <button
+                type="button"
+                onClick={sendExpiryAlert}
+                disabled={sendingExpiry}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/20 px-3 py-1 text-[11px] font-bold text-white hover:bg-white/20 disabled:opacity-60 shrink-0"
+              >
+                <Mail className="w-3 h-3" aria-hidden="true" />
+                {sendingExpiry ? 'Sending…' : 'Email alert now'}
+              </button>
             </div>
 
             <div className="overflow-y-auto flex-1 pr-1 max-h-[200px] relative z-10 navy-scrollbar">

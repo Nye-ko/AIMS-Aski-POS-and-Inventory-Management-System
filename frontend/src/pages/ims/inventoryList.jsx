@@ -558,6 +558,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
                 <th className="p-3 text-center">Stock</th>
                 <th className="p-3 text-center">Unit Cost</th>
                 <th className="p-3 text-center">Price</th>
+                <th className="p-3 text-center">Expiry</th>
                 <th className="p-3 text-right">Status</th>
               </tr>
             </thead>
@@ -576,6 +577,11 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
                     <td className="p-3 text-center font-bold text-blue-600">{stockVal}</td>
                     <td className="p-3 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
                     <td className="p-3 text-center">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
+                    <td className="p-3 text-center">
+                      <ExpiryEditor product={p} onUpdated={(updated) => {
+                        setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
+                      }} />
+                    </td>
                     <td className={`p-3 text-right font-bold ${isExpired ? 'text-rose-600' : stockVal > 10 ? 'text-emerald-600' : 'text-amber-600'}`}>
                       {statusText}
                     </td>
@@ -586,6 +592,60 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline editable expiry-date input. PATCHes /api/products/:id on change,
+ * which lets the backend detect crossings into the expiry warning window
+ * and fire the alert email.
+ */
+function ExpiryEditor({ product, onUpdated }) {
+  const toInput = (v) => {
+    if (!v) return '';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const [value, setValue] = React.useState(toInput(product.expiryDate));
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  React.useEffect(() => { setValue(toInput(product.expiryDate)); }, [product.expiryDate]);
+
+  const commit = async (next) => {
+    setSaving(true); setErr('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expiryDate: next || null }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const updated = await res.json();
+      onUpdated({ id: product.id, expiryDate: updated.expiryDate });
+    } catch (e) {
+      setErr(e.message || 'save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <input
+        type="date"
+        value={value}
+        disabled={saving}
+        onChange={(e) => { setValue(e.target.value); commit(e.target.value); }}
+        className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+        aria-label={`Expiry date for ${product.name}`}
+      />
+      {err && <span className="text-[10px] text-rose-600 font-semibold">{err}</span>}
     </div>
   );
 }
