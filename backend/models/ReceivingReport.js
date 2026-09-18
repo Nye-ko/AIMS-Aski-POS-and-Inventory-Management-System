@@ -20,13 +20,11 @@ const ReceivingReportModel = {
     if (!purchaseOrder) throw new Error('Purchase order not found');
     if (purchaseOrder.status !== 'PENDING') throw new Error('This purchase order is not pending receipt');
 
-    let validReceivedById = Number(receivedById) || 5;
+    // receivedById is set by the route handler from the authenticated user's
+    // JWT — verify it still resolves to a real user.
+    const validReceivedById = Number(receivedById);
     const userExists = await prisma.user.findUnique({ where: { id: validReceivedById } });
-    if (!userExists) {
-      const fallbackUser = await prisma.user.findFirst();
-      if (!fallbackUser) throw new Error('No user found in the database to attribute this receiving report to.');
-      validReceivedById = fallbackUser.id;
-    }
+    if (!userExists) throw new Error('Authenticated user no longer exists.');
 
     const lineItems = items.map((item) => {
       const quantity = parseInt(item.quantity, 10);

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, RotateCcw, Loader2, Inbox, ChevronLeft } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const REASON_OPTIONS = ['Damaged', 'Expired', 'Incorrect Item', 'Overstock', 'Retail'];
@@ -32,6 +34,8 @@ const buildLineItems = (rr) =>
   }));
 
 export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
+  const { token, logout } = useAuth();
+  const navigate = useNavigate();
   const [view, setView] = useState('list'); // 'list' | 'detail'
   const [receivingReports, setReceivingReports] = useState([]);
   const [isLoadingList, setIsLoadingList] = useState(false);
@@ -98,7 +102,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
     try {
       const res = await fetch(`${API_BASE_URL}/purchase-returns`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           receivingReportId: selectedRr.id,
           items: eligibleItems,
@@ -106,6 +110,12 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
           remarks,
         }),
       });
+
+      if (res.status === 401) {
+        logout();
+        navigate('/', { replace: true });
+        throw new Error('Your session is no longer valid. Please log in again.');
+      }
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

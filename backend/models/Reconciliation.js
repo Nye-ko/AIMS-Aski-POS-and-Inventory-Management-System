@@ -79,20 +79,14 @@ const ReconciliationModel = {
       status,
     } = data;
 
-    // Resolve target cashier ID dynamically (defaults to 5)
-    let validCashierId = parseInt(cashierId, 10) || 5;
-
-    // Verify user exists to prevent P2003 foreign key error
+    // cashierId is set by the route handler from the authenticated user's
+    // JWT — verify it still resolves to a real user.
+    const validCashierId = parseInt(cashierId, 10);
     const cashierExists = await prisma.user.findUnique({
       where: { id: validCashierId },
     });
-
     if (!cashierExists) {
-      const fallbackUser = await prisma.user.findFirst();
-      if (!fallbackUser) {
-        throw new Error('No valid user/cashier found in database to associate reconciliation.');
-      }
-      validCashierId = fallbackUser.id;
+      throw new Error('Authenticated user no longer exists.');
     }
 
     // Fallback report number generator

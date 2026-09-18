@@ -2,6 +2,7 @@ require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
 
 // Setup PostgreSQL connection pool and adapter
 const connectionString = process.env.DATABASE_URL;
@@ -27,22 +28,25 @@ async function seedData() {
     await prisma.user.deleteMany();
     console.log('Database cleared.');
 
-    // 1. Seed Users
-    const cashier = await prisma.user.create({
-      data: {
-        username: 'cashier1',
-        password: 'hashedpassword123',
-        role: 'CASHIER',
-      },
-    });
+    // 1. Seed Users (dev credentials — bcrypt-hashed, matches the login page's
+    // documented dev accounts in frontend/src/auth/devUsers.js)
+    const seedUsers = [
+      { username: 'admin', password: 'admin123', role: 'ADMIN' },
+      { username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR' },
+      { username: 'cashier', password: 'cashier123', role: 'CASHIER' },
+      { username: 'accounting', password: 'accounting123', role: 'ACCOUNTING' },
+      { username: 'inventory', password: 'inventory123', role: 'INVENTORY' },
+    ];
 
-    const admin = await prisma.user.create({
-      data: {
-        username: 'admin1',
-        password: 'hashedpassword123',
-        role: 'ADMIN',
-      },
-    });
+    const usersByUsername = {};
+    for (const u of seedUsers) {
+      const hashedPassword = await bcrypt.hash(u.password, 10);
+      usersByUsername[u.username] = await prisma.user.create({
+        data: { username: u.username, password: hashedPassword, role: u.role },
+      });
+    }
+    const cashier = usersByUsername.cashier;
+    const admin = usersByUsername.admin;
 
     console.log('Users seeded.');
 

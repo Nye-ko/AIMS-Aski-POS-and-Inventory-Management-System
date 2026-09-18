@@ -23,12 +23,14 @@ const { ReceivingReportModel } = require('./models/ReceivingReport');
 const { buildReceivingReportWorkbook } = require('./services/receivingReportExcel');
 const { PurchaseReturnModel } = require('./models/PurchaseReturn');
 const { buildPurchaseReturnWorkbook } = require('./services/purchaseReturnExcel');
+const { AuthModel, authenticateToken, STALE_SESSION_ERROR } = require('./models/Auth');
 
 // Import Services
 const mailer = require('./services/mailer');
 const lowStockAlerts = require('./services/lowStockAlerts');
 const expiryAlerts = require('./services/expiryAlerts');
 const forecastAlerts = require('./services/forecastAlerts');
+const receiptPrinter = require('./services/receiptPrinter');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -56,6 +58,22 @@ io.on('connection', (socket) => {
 });
 
 // --- ROUTES ---
+
+// --- AUTH ROUTES ---
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const result = await AuthModel.login(username, password);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ error: error.message || 'Login failed' });
+  }
+});
+
+// Lets the frontend verify a stored token is still valid (e.g. on page reload).
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
 
 // 1. Get All Products (Includes supplier relations and computed status)
 app.get('/api/products', async (req, res) => {
@@ -144,21 +162,22 @@ app.get('/api/suppliers', async (req, res) => {
 // --- PURCHASE ORDER ROUTES ---
 
 // Create a Purchase Order for one supplier from checked low-stock items
-app.post('/api/purchase-orders', async (req, res) => {
+app.post('/api/purchase-orders', authenticateToken, async (req, res) => {
   try {
-    const { supplierId, items, terms, remarks, preparedBy, createdById } = req.body;
+    const { supplierId, items, terms, remarks, preparedBy } = req.body;
     const purchaseOrder = await PurchaseOrderModel.create({
       supplierId,
       items,
       terms,
       remarks,
       preparedBy,
-      createdById,
+      createdById: req.user.id,
     });
     res.status(201).json(purchaseOrder);
   } catch (error) {
     console.error('Error creating purchase order:', error);
-    res.status(400).json({ error: error.message || 'Failed to create purchase order' });
+    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
+    res.status(status).json({ error: error.message || 'Failed to create purchase order' });
   }
 });
 
@@ -195,21 +214,22 @@ app.get('/api/purchase-orders/pending', async (req, res) => {
 // --- RECEIVING REPORT ROUTES ---
 
 // File a Receiving Report against a pending Purchase Order (tops up stock/cost, closes the PO)
-app.post('/api/receiving-reports', async (req, res) => {
+app.post('/api/receiving-reports', authenticateToken, async (req, res) => {
   try {
-    const { purchaseOrderId, items, deliveryNote, invoiceNo, remarks, receivedById } = req.body;
+    const { purchaseOrderId, items, deliveryNote, invoiceNo, remarks } = req.body;
     const receivingReport = await ReceivingReportModel.create({
       purchaseOrderId,
       items,
       deliveryNote,
       invoiceNo,
       remarks,
-      receivedById,
+      receivedById: req.user.id,
     });
     res.status(201).json(receivingReport);
   } catch (error) {
     console.error('Error creating receiving report:', error);
-    res.status(400).json({ error: error.message || 'Failed to create receiving report' });
+    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
+    res.status(status).json({ error: error.message || 'Failed to create receiving report' });
   }
 });
 
@@ -246,20 +266,21 @@ app.get('/api/receiving-reports', async (req, res) => {
 // --- PURCHASE RETURN ROUTES ---
 
 // File a Purchase Return against a Receiving Report (decrements product stock)
-app.post('/api/purchase-returns', async (req, res) => {
+app.post('/api/purchase-returns', authenticateToken, async (req, res) => {
   try {
-    const { receivingReportId, items, reason, remarks, createdById } = req.body;
+    const { receivingReportId, items, reason, remarks } = req.body;
     const purchaseReturn = await PurchaseReturnModel.create({
       receivingReportId,
       items,
       reason,
       remarks,
-      createdById,
+      createdById: req.user.id,
     });
     res.status(201).json(purchaseReturn);
   } catch (error) {
     console.error('Error creating purchase return:', error);
-    res.status(400).json({ error: error.message || 'Failed to create purchase return' });
+    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
+    res.status(status).json({ error: error.message || 'Failed to create purchase return' });
   }
 });
 
@@ -285,16 +306,30 @@ app.get('/api/purchase-returns/:id/export', async (req, res) => {
 // --- TRANSACTIONS ROUTES ---
 
 // Create New Transaction (Checkout)
-app.post('/api/transactions', async (req, res) => {
+app.post('/api/transactions', authenticateToken, async (req, res) => {
   try {
     const io = req.app.get('io');
-    const result = await TransactionModel.createCheckout(req.body, io);
+    const result = await TransactionModel.createCheckout({ ...req.body, cashierId: req.user.id }, io);
 
     // Broadcast updated financial metrics over WebSocket
     const updatedFinance = await FinanceModel.getSummary();
     io.emit('finance_updated', updatedFinance);
 
     res.status(201).json(result);
+
+    // Fire-and-forget silent receipt print. Never blocks or fails the sale.
+    receiptPrinter
+      .printReceipt({
+        cashier: req.user.username,
+        transactionId: result.transactionNo || result.id,
+        items: result.items,
+        subtotal: result.subtotal,
+        discountAmount: result.discountAmount,
+        totalAmount: result.totalAmount,
+        paymentMethod: result.paymentMethod,
+        amountPaid: req.body.amountPaid ?? result.totalAmount,
+      })
+      .catch((err) => console.error('[receipt-printer] Unexpected print error:', err.message));
 
     // Fire-and-forget low-stock crossing alert. Never blocks or fails the sale.
     const stockUpdates = result && result._stockUpdates;
@@ -306,7 +341,22 @@ app.post('/api/transactions', async (req, res) => {
     }
   } catch (error) {
     console.error('Transaction error:', error);
+    if (error.message === STALE_SESSION_ERROR) {
+      return res.status(401).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Transaction failed' });
+  }
+});
+
+// Silent on-demand print (used by the POS "Print" preview button, and for
+// reprints) — same printer path as the automatic post-checkout print above.
+app.post('/api/print/receipt', authenticateToken, async (req, res) => {
+  try {
+    const result = await receiptPrinter.printReceipt({ ...req.body, cashier: req.user.username });
+    res.json(result);
+  } catch (error) {
+    console.error('Manual receipt print failed:', error);
+    res.status(500).json({ printed: false, reason: 'error', error: error.message });
   }
 });
 
@@ -392,9 +442,9 @@ app.get('/api/reconciliation/expected-cash', async (req, res) => {
 });
 
 // Save End of Day Reconciliation
-app.post('/api/reconciliation', async (req, res) => {
+app.post('/api/reconciliation', authenticateToken, async (req, res) => {
   try {
-    const record = await ReconciliationModel.create(req.body);
+    const record = await ReconciliationModel.create({ ...req.body, cashierId: req.user.id });
 
     // Broadcast updated financial metrics over WebSocket
     const io = req.app.get('io');
@@ -404,6 +454,9 @@ app.post('/api/reconciliation', async (req, res) => {
     res.status(201).json({ message: 'Reconciliation Submitted', record });
   } catch (error) {
     console.error('Error creating reconciliation:', error);
+    if (error.message === STALE_SESSION_ERROR) {
+      return res.status(401).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Failed to submit reconciliation' });
   }
 });

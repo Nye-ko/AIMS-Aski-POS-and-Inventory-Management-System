@@ -22,13 +22,11 @@ const PurchaseReturnModel = {
     });
     if (!receivingReport) throw new Error('Receiving report not found');
 
-    let validCreatedById = Number(createdById) || 5;
+    // createdById is set by the route handler from the authenticated user's
+    // JWT — verify it still resolves to a real user.
+    const validCreatedById = Number(createdById);
     const userExists = await prisma.user.findUnique({ where: { id: validCreatedById } });
-    if (!userExists) {
-      const fallbackUser = await prisma.user.findFirst();
-      if (!fallbackUser) throw new Error('No user found in the database to attribute this purchase return to.');
-      validCreatedById = fallbackUser.id;
-    }
+    if (!userExists) throw new Error('Authenticated user no longer exists.');
 
     const lineItems = items.map((item) => {
       const quantity = parseInt(item.quantity, 10);

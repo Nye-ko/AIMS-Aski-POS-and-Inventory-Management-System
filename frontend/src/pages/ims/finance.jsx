@@ -26,6 +26,7 @@ import {
   Legend
 } from 'recharts';
 import NotificationPanel from './NotificationPanel';
+import { useAlertNotifications } from '../../hooks/useAlertNotifications';
 
 // Socket connection to backend port 5000
 const socket = io('http://localhost:5000', {
@@ -38,6 +39,7 @@ export default function Finance() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notif = useAlertNotifications();
   const [isConnected, setIsConnected] = useState(socket.connected);
 
   // Helper function to extract array data safely
@@ -170,12 +172,19 @@ export default function Finance() {
               className="relative p-3 rounded-2xl bg-white border border-slate-200/60 text-slate-700 hover:bg-slate-50 transition shadow-sm"
             >
               <Bell className="w-5 h-5 text-slate-700" />
-              <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-blue-600 rounded-full border-2 border-white animate-pulse" />
+              {notif.unreadCount > 0 && (
+                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
+              )}
             </button>
 
-            <NotificationPanel 
+            <NotificationPanel
               isOpen={isNotifOpen}
               onClose={() => setIsNotifOpen(false)}
+              notifications={notif.notifications}
+              loading={notif.loading}
+              error={notif.error}
+              unreadCount={notif.unreadCount}
+              markAllRead={notif.markAllRead}
             />
           </div>
         </div>

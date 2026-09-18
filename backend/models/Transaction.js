@@ -25,21 +25,15 @@ const TransactionModel = {
       cashierId,
     } = payload;
 
-    // 1. Resolve a valid cashierId dynamically (defaults to 5)
-    let validCashierId = Number(cashierId) || 5;
-
-    // Check if the target cashier exists in DB to prevent P2003 errors
+    // cashierId is set by the route handler from the authenticated user's
+    // JWT (see authenticateToken in models/Auth.js) — verify it still
+    // resolves to a real user rather than silently reattributing the sale.
+    const validCashierId = Number(cashierId);
     const cashierExists = await prisma.user.findUnique({
       where: { id: validCashierId },
     });
-
     if (!cashierExists) {
-      // Grab the first user in the database as a fallback
-      const fallbackUser = await prisma.user.findFirst();
-      if (!fallbackUser) {
-        throw new Error('No user/cashier found in the database.');
-      }
-      validCashierId = fallbackUser.id;
+      throw new Error('Authenticated user no longer exists.');
     }
 
     // 2. Execute database transaction

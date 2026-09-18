@@ -1,12 +1,12 @@
-// Dev-mode role table used by the login page. Ships until the backend
-// implements POST /api/auth/login. Not for production.
-
-export const DEV_USERS = [
-  { id: 1, username: 'admin',      password: 'admin123',      role: 'ADMIN' },
-  { id: 2, username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR' },
-  { id: 3, username: 'cashier',    password: 'cashier123',    role: 'CASHIER' },
-  { id: 4, username: 'accounting', password: 'accounting123', role: 'ACCOUNTING' },
-  { id: 5, username: 'inventory',  password: 'inventory123',  role: 'INVENTORY' },
+// Dev credentials seeded server-side by backend/seeder.js. Login itself goes
+// through POST /api/auth/login (see AuthContext.jsx) — this list is just for
+// the "try these" hint shown on the login page.
+export const DEV_CREDENTIALS_HINT = [
+  { username: 'admin', password: 'admin123', role: 'ADMIN' },
+  { username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR' },
+  { username: 'cashier', password: 'cashier123', role: 'CASHIER' },
+  { username: 'accounting', password: 'accounting123', role: 'ACCOUNTING' },
+  { username: 'inventory', password: 'inventory123', role: 'INVENTORY' },
 ];
 
 // Password supervisors type at the POS to authorize a discount.

@@ -12,6 +12,8 @@ enum Role {
   CASHIER
   SUPERVISOR
   ADMIN
+  ACCOUNTING
+  INVENTORY
 }
 
 enum PaymentMethod {
