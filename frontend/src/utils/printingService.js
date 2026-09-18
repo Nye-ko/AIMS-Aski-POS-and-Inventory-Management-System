@@ -1,72 +1,11 @@
 /**
- * Prints a sales receipt to the browser print dialog.
- * @param {Object} receiptData - Transaction data
- * @param {string} printerWidth - '80mm' or '58mm'
- */
-/**
  * Prints a daily X-reading reconciliation report for a thermal printer.
+ * Sales receipts no longer go through this popup path — they're printed
+ * silently by the backend (see services/receiptPrinter.js) so checkout
+ * never opens a browser print dialog.
  * @param {Object} reportData - Reconciliation details
  * @param {string} printerWidth - '80mm' or '58mm'
  */
-export const printThermalReceipt = (receiptData = {}, printerWidth = '80mm') => {
-  const pageWidth = printerWidth === '80mm' ? '80mm' : '58mm';
-  const charsPerLine = printerWidth === '80mm' ? 42 : 32;
-  const items = Array.isArray(receiptData.items) ? receiptData.items : [];
-  const totalAmount = Number(receiptData.totalAmount) || 0;
-  const amountPaid = Number(receiptData.amountPaid) || 0;
-  const change = Math.max(0, amountPaid - totalAmount);
-
-  const pad = (value, length, right = false) => {
-    const text = String(value ?? '');
-    return right ? text.padStart(length, ' ') : text.padEnd(length, ' ');
-  };
-  const center = (value) => {
-    const text = String(value ?? '');
-    return ' '.repeat(Math.max(0, Math.floor((charsPerLine - text.length) / 2))) + text;
-  };
-  const divider = (character = '-') => character.repeat(charsPerLine);
-  const money = (value) => `₱${(Number(value) || 0).toFixed(2)}`;
-
-  let receipt = '';
-  receipt += center('ASKI MULTI-PURPOSE COOPERATIVE') + '\n';
-  receipt += center('Barangay Andal Alia?o, Talisay City') + '\n';
-  receipt += center('TIN: 000-000-000-000') + '\n\n';
-  receipt += `Txn No.: ${receiptData.transactionId || 'N/A'}\n`;
-  receipt += `Date: ${new Date().toLocaleDateString()}\n`;
-  receipt += `Time: ${new Date().toLocaleTimeString()}\n`;
-  receipt += `Cashier: ${receiptData.cashierName || receiptData.cashier || 'N/A'}\n\n`;
-  receipt += divider('=') + '\n';
-
-  items.forEach((item) => {
-    const quantity = Number(item.quantity) || 0;
-    const unitPrice = Number(item.unitPrice ?? item.price ?? 0) || 0;
-    const itemName = String(item.name || 'Item').substring(0, 18);
-    const lineTotal = quantity * unitPrice;
-    receipt += pad(itemName, 18) + pad(String(quantity), 4, true) + pad(money(lineTotal), 14, true) + '\n';
-    receipt += `@ ${money(unitPrice)}\n`;
-  });
-
-  receipt += divider('=') + '\n';
-  receipt += pad('SUBTOTAL', 24) + pad(money(receiptData.subtotal ?? totalAmount), 16, true) + '\n';
-  receipt += pad('DISCOUNT', 24) + pad(money(receiptData.discountAmount ?? 0), 16, true) + '\n';
-  receipt += pad('TOTAL', 24) + pad(money(totalAmount), 16, true) + '\n';
-
-  if (String(receiptData.paymentMethod || '').toUpperCase() === 'CASH') {
-    receipt += pad('CASH', 24) + pad(money(amountPaid), 16, true) + '\n';
-    receipt += pad('CHANGE', 24) + pad(money(change), 16, true) + '\n';
-  }
-
-  receipt += divider('-') + '\n';
-  receipt += pad('VATABLE SALES', 24) + pad(money(receiptData.vatableSales || 0), 16, true) + '\n';
-  receipt += pad('VAT EXEMPT', 24) + pad(money(receiptData.vatExemptSales || 0), 16, true) + '\n';
-  receipt += pad('ZERO-RATED', 24) + pad(money(receiptData.zeroRatedSales || 0), 16, true) + '\n';
-  receipt += divider('=') + '\n';
-  receipt += center('Thank you for your purchase!') + '\n';
-
-  printWindowHelper(receipt, pageWidth);
-};
-
-
 export const printReconciliationReport = (reportData = {}, printerWidth = '80mm') => {
   const pageWidth = printerWidth === '80mm' ? '80mm' : '58mm';
   const charsPerLine = printerWidth === '80mm' ? 42 : 32;

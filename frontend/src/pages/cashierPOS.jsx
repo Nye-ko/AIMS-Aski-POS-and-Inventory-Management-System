@@ -1,12 +1,24 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search, Trash2, ChevronDown, Plus, Minus, Store,
-  Lock, Clock, Banknote, X, Percent, Download, Printer
+  Lock, Clock, Banknote, X, Percent, Download
 } from 'lucide-react';
 import { exportCsv } from '../utils/exportCsv';
-import { printThermalReceipt } from '../utils/printReceipt';
+import { useAuth } from '../auth/AuthContext';
 
 export default function CashierPOS() {
+  const { user, token, logout } = useAuth();
+  const navigate = useNavigate();
+
+  // A write failed with 401 because the session's JWT points at a user id
+  // that no longer exists (e.g. the users table was reseeded) — force a
+  // clean re-login instead of leaving the cashier stuck on silent failures.
+  const handleStaleSession = () => {
+    logout();
+    alert('Your session is no longer valid. Please log in again.');
+    navigate('/', { replace: true });
+  };
   // LIVE BACKEND STATES
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +199,6 @@ export default function CashierPOS() {
   };
 
   // SUBMIT CONFIRMED TRANSACTION TO BACKEND
-  // SUBMIT CONFIRMED TRANSACTION TO BACKEND
 const handleConfirmSale = async () => {
   if (cart.length === 0) {
     alert("Cart is empty!");
@@ -220,13 +231,12 @@ const handleConfirmSale = async () => {
     discountAmount: Number(currentDiscountAmount.toFixed(2)),
     totalAmount: Number(currentTotalAmount.toFixed(2)),
     paymentMethod: formattedPaymentMethod, // "CASH", "CARD", "E_WALLET"
-    cashierId: 5,
   };
 
   try {
     const response = await fetch('http://localhost:5000/api/transactions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
     });
 
@@ -234,22 +244,14 @@ const handleConfirmSale = async () => {
 
     if (response.ok) {
       alert(`Transaction successful! PHP ${currentTotalAmount.toFixed(2)} recorded.`);
-      
-      // PRINT THERMAL RECEIPT
-      printThermalReceipt({
-        cashier: 'Cashier',
-        transactionId: responseData.id || Date.now(),
-        items: cart,
-        subtotal: currentSubtotal,
-        discountAmount: currentDiscountAmount,
-        discountPercent: discountPercent,
-        totalAmount: currentTotalAmount,
-        paymentMethod: paymentMethod,
-        amountPaid: currentTotalAmount
-      }, '80mm');
-      
+
+      // The backend prints the receipt automatically (silently, no dialog)
+      // right after saving the transaction — nothing to do here.
+
       handleClearCart();
       fetchProducts(); // Refresh stock counts from server
+    } else if (response.status === 401) {
+      handleStaleSession();
     } else {
       console.error('Server error details:', responseData);
       alert(`Transaction failed: ${responseData.message || responseData.error || 'Server error'}`);
@@ -296,7 +298,7 @@ const handleConfirmSale = async () => {
     exportCsv({
       reportNo: `00${Math.floor(1000 + Math.random() * 9000)}`,
       createdAt: new Date().toISOString(),
-      cashier: { username: 'RACHELLE' },
+      cashier: { username: user?.username || 'Cashier' },
 
       grossSales: grossSalesTotal || expectedSales,
       pointsAvailed: 0.00,
@@ -319,7 +321,6 @@ const handleConfirmSale = async () => {
 
   const handleSubmitReconciliation = async () => {
     const payload = {
-      cashierId: 5,
       grossSales: grossSalesTotal || expectedSales,
       pointsAvailed: 0.00,
       totalDiscount: discountAmount || 0,
@@ -334,7 +335,7 @@ const handleConfirmSale = async () => {
     try {
       const res = await fetch('http://localhost:5000/api/reconciliation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
 
@@ -342,6 +343,8 @@ const handleConfirmSale = async () => {
         alert('Reconciliation saved successfully!');
         handleExportReport();
         setShowEODModal(false);
+      } else if (res.status === 401) {
+        handleStaleSession();
       } else {
         alert('Failed to save reconciliation record.');
       }
@@ -598,40 +601,12 @@ const handleConfirmSale = async () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-3 gap-2 shrink-0">
+        <div className="grid grid-cols-2 gap-2 shrink-0">
           <button
             onClick={handleClearCart}
             className="py-2 bg-[#C2B8B3] hover:bg-[#b2a7a1] text-gray-800 text-xs font-bold rounded-lg transition-colors cursor-pointer"
           >
             Clear
-          </button>
-          <button
-            onClick={() => {
-              if (cart.length === 0) {
-                alert("Cart is empty!");
-                return;
-              }
-              const currentSubtotal = cart.reduce(
-                (sum, item) => sum + Number(item.unitPrice) * item.quantity,
-                0
-              );
-              const currentDiscountAmount = (currentSubtotal * discountPercent) / 100;
-              const currentTotalAmount = Math.max(0, currentSubtotal - currentDiscountAmount);
-              
-              printThermalReceipt({
-                cashier: 'Cashier',
-                items: cart,
-                subtotal: currentSubtotal,
-                discountAmount: currentDiscountAmount,
-                totalAmount: currentTotalAmount,
-                paymentMethod: paymentMethod
-              }, '80mm');
-            }}
-            disabled={cart.length === 0}
-            className="py-2 bg-[#9B8B7E] hover:bg-[#8B7B6E] text-white text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-          >
-            <Printer className="w-3 h-3" />
-            Print
           </button>
           <button
             onClick={handleConfirmSale}

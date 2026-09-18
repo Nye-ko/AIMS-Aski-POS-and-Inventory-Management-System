@@ -1,7 +1,3 @@
-// SMTP mail service for low-stock and expiry alerts. Configuration is read
-// from process.env (see backend/.env.example). Transporter is created lazily
-// and cached; missing config disables sends without throwing.
-
 const nodemailer = require('nodemailer');
 
 let cachedTransporter = null;

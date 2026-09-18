@@ -1,20 +1,27 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  Home, 
-  Package, 
-  BrainCircuit, 
-  BarChart3, 
-  Settings, 
-  LogOut, 
+import {
+  Home,
+  Package,
+  BrainCircuit,
+  BarChart3,
+  Settings,
+  LogOut,
   ChevronLeft,
-  ChevronRight 
+  ChevronRight
 } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
 
 export default function Sidebar() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/', { replace: true });
+  };
 
   const sidebarLinks = [
     { id: 'home', label: 'Home', icon: Home, path: '/adminDashboard' },
@@ -83,19 +90,19 @@ export default function Sidebar() {
       <div className="p-3 border-t border-white/40 space-y-2">
         <div className={`flex items-center gap-3 p-2 rounded-2xl bg-white/20 border border-white/40 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 border border-white flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-sm">
-            A
+            {(user?.username?.[0] || '?').toUpperCase()}
           </div>
           {!isSidebarCollapsed && (
             <div className="truncate">
-              <p className="text-xs font-bold text-slate-800 truncate">Admin</p>
-              <p className="text-xs text-slate-600 font-medium truncate">Administrator</p>
+              <p className="text-xs font-bold text-slate-800 truncate">{user?.username || 'Guest'}</p>
+              <p className="text-xs text-slate-600 font-medium truncate">{user?.role || '—'}</p>
             </div>
           )}
         </div>
 
         <div className={`flex gap-1.5 ${isSidebarCollapsed ? 'flex-col items-center' : 'flex-row'}`}>
-          <button 
-            onClick={() => navigate('/')}
+          <button
+            onClick={handleLogout}
             className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-rose-700 bg-rose-500/10 border border-rose-200/50 hover:bg-rose-500/20 transition-all"
           >
             <LogOut className="w-4 h-4 text-rose-600 shrink-0" />

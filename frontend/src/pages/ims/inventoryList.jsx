@@ -13,7 +13,7 @@ import {
   Barcode,
   Loader2
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import PurchaseOrderModal from './PurchaseOrderModal';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
@@ -62,15 +62,105 @@ export default function InventorySystem() {
     }
   };
 
-  const exportToExcel = (data, fileName) => {
+  const STATUS_STYLES = {
+    'In Stock':     { fill: 'FFDCFCE7', font: 'FF15803D' },
+    'Low Stock':    { fill: 'FFFEF3C7', font: 'FFB45309' },
+    'Out of Stock': { fill: 'FFFEE2E2', font: 'FFB91C1C' },
+    'Expired':      { fill: 'FFF3E8FF', font: 'FF7E22CE' },
+  };
+
+  const exportToExcel = async (data, fileName) => {
     if (!data || data.length === 0) {
       alert("No data available to export.");
       return;
     }
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Report');
-    XLSX.writeFile(wb, `${fileName}_${Date.now()}.xlsx`);
+
+    const headers = Object.keys(data[0]);
+    const moneyHeaders = new Set(headers.filter((h) => h.includes('₱')));
+    const statusColIndex = headers.indexOf('Status') + 1;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'AMPC Inventory';
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet('Report', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+
+    ws.columns = headers.map((h) => {
+      const maxLen = data.reduce((max, row) => {
+        const val = row[h];
+        return Math.max(max, val == null ? 0 : String(val).length);
+      }, h.length);
+      return { header: h, key: h, width: Math.min(Math.max(maxLen + 3, 12), 40) };
+    });
+
+    data.forEach((row) => {
+      const values = {};
+      headers.forEach((h) => {
+        const raw = row[h];
+        values[h] = moneyHeaders.has(h) && raw !== '' && raw != null ? Number(raw) : raw;
+      });
+      ws.addRow(values);
+    });
+
+    const thinBorder = (color) => ({
+      top: { style: 'thin', color: { argb: color } },
+      bottom: { style: 'thin', color: { argb: color } },
+      left: { style: 'thin', color: { argb: color } },
+      right: { style: 'thin', color: { argb: color } },
+    });
+
+    const headerRow = ws.getRow(1);
+    headerRow.height = 20;
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = thinBorder('FFCBD5E1');
+    });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
+
+    for (let i = 2; i <= ws.rowCount; i++) {
+      const row = ws.getRow(i);
+      const isEven = i % 2 === 0;
+      row.eachCell((cell, colNumber) => {
+        const header = headers[colNumber - 1];
+        cell.border = thinBorder('FFE2E8F0');
+        if (moneyHeaders.has(header)) {
+          cell.numFmt = '#,##0.00';
+          cell.alignment = { horizontal: 'right' };
+        } else if (typeof cell.value === 'number') {
+          cell.alignment = { horizontal: 'center' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+        if (isEven) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        }
+      });
+
+      if (statusColIndex > 0) {
+        const statusCell = row.getCell(statusColIndex);
+        const style = STATUS_STYLES[statusCell.value];
+        if (style) {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
+          statusCell.font = { bold: true, color: { argb: style.font } };
+          statusCell.alignment = { horizontal: 'center' };
+        }
+      }
+    }
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName}_${Date.now()}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   if (loading) {
@@ -181,6 +271,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     supplierId: '',
     category: '',
     currentStock: '',
+    minStock: '',
     unitCost: '',
     sellingPrice: '',
     batchDate: ''
@@ -218,6 +309,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         name: formData.name,
         category: formData.category || 'Uncategorized',
         currentStock: Number(formData.currentStock) || 0,
+        minStock: Number(formData.minStock) || 10,
         unitCost: Number(formData.unitCost) || 0,
         sellingPrice: Number(formData.sellingPrice) || 0,
         batchDate: formData.batchDate || new Date().toISOString().split('T')[0],
@@ -235,7 +327,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
       const savedProduct = await response.json();
 
       setProducts(prev => [savedProduct, ...prev]);
-      setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
+      setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
       setIsFormOpen(false);
     } catch (err) {
       alert(`Error saving product: ${err.message}`);
@@ -427,6 +519,11 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
             </div>
 
             <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Min Stock (alert threshold)</label>
+              <input type="number" name="minStock" value={formData.minStock} onChange={handleInputChange} placeholder="Defaults to 10" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-slate-600 mb-1">Unit Cost (₱)</label>
               <input type="number" name="unitCost" value={formData.unitCost} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
             </div>
@@ -585,6 +682,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                 <th className="p-3">Supplier</th>
                 <th className="p-3">Category</th>
                 <th className="p-3 text-center">Stock</th>
+                <th className="p-3 text-center">Min Stock</th>
                 <th className="p-3 text-center">Unit Cost</th>
                 <th className="p-3 text-center">Price</th>
                 <th className="p-3 text-center">Expiry</th>
@@ -604,6 +702,11 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                     <td className="p-3 text-slate-500">{p.supplierName || 'N/A'}</td>
                     <td className="p-3">{p.category}</td>
                     <td className="p-3 text-center font-bold text-blue-600">{stockVal}</td>
+                    <td className="p-3 text-center">
+                      <MinStockEditor product={p} onUpdated={(updated) => {
+                        setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
+                      }} />
+                    </td>
                     <td className="p-3 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
                     <td className="p-3 text-center">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
                     <td className="p-3 text-center">
@@ -691,6 +794,55 @@ function ExpiryEditor({ product, onUpdated }) {
         onChange={(e) => { setValue(e.target.value); commit(e.target.value); }}
         className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
         aria-label={`Expiry date for ${product.name}`}
+      />
+      {err && <span className="text-[10px] text-rose-600 font-semibold">{err}</span>}
+    </div>
+  );
+}
+
+/**
+ * Inline editable min-stock (reorder level) input. PATCHes /api/products/:id
+ * on change — this is the threshold the low-stock alert system compares
+ * current stock against (see backend/services/lowStockAlerts.js).
+ */
+function MinStockEditor({ product, onUpdated }) {
+  const [value, setValue] = React.useState(product.minStock ?? 10);
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  React.useEffect(() => { setValue(product.minStock ?? 10); }, [product.minStock]);
+
+  const commit = async (next) => {
+    const num = Number(next);
+    if (!Number.isFinite(num) || num < 0) return;
+    setSaving(true); setErr('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minStock: num }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const updated = await res.json();
+      onUpdated({ id: product.id, minStock: updated.minStock });
+    } catch (e) {
+      setErr(e.message || 'save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <input
+        type="number"
+        min="0"
+        value={value}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        className="w-16 bg-white border border-slate-300 rounded px-2 py-0.5 text-xs text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+        aria-label={`Min stock threshold for ${product.name}`}
       />
       {err && <span className="text-[10px] text-rose-600 font-semibold">{err}</span>}
     </div>

@@ -1,23 +1,29 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { ROLE_HOME } from '../../auth/devUsers';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, role } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const handleSubmit = (e) => {
+  // Already logged in (e.g. hit the browser back button into "/") — bounce
+  // straight to the role's home instead of showing the login form again.
+  if (isAuthenticated) {
+    return <Navigate to={ROLE_HOME[role] || '/adminDashboard'} replace />;
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setBusy(true);
     try {
-      const authed = login(username, password);
+      const authed = await login(username, password);
       const dest = ROLE_HOME[authed.role] || '/adminDashboard';
       navigate(dest, { replace: true });
     } catch (err) {

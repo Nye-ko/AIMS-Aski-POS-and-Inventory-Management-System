@@ -3,11 +3,13 @@ import { Home, Bell, Banknote, AlertTriangle, Mail } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { io } from 'socket.io-client';
 import NotificationPanel from './NotificationPanel';
+import { useAlertNotifications } from '../../hooks/useAlertNotifications';
 
 const SOCKET_SERVER_URL = 'http://localhost:5000';
 
 export default function Dashboard() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notif = useAlertNotifications();
 
   //dashboard data
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -134,6 +136,9 @@ export default function Dashboard() {
         .then((data) => setLowStockCount(data.lowStockCount))
         .catch(console.error);
 
+      // A checkout can push a product's stock across its minStock line.
+      notif.refresh();
+
       // Every checkout invalidates the forecast — re-fetch.
       fetchForecast();
     });
@@ -141,6 +146,7 @@ export default function Dashboard() {
     return () => {
       socket.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -178,12 +184,19 @@ export default function Dashboard() {
             className="relative p-3 rounded-2xl bg-white border border-slate-200/60 text-slate-700 hover:bg-slate-50 transition shadow-sm"
           >
             <Bell className="w-5 h-5 text-slate-700" />
-            <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-blue-600 rounded-full border-2 border-white animate-pulse" />
+            {notif.unreadCount > 0 && (
+              <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
+            )}
           </button>
 
           <NotificationPanel
             isOpen={isNotifOpen}
             onClose={() => setIsNotifOpen(false)}
+            notifications={notif.notifications}
+            loading={notif.loading}
+            error={notif.error}
+            unreadCount={notif.unreadCount}
+            markAllRead={notif.markAllRead}
           />
         </div>
       </header>

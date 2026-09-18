@@ -7,6 +7,7 @@ import InventoryList  from './pages/ims/inventoryList'
 import Demand  from './pages/ims/demand'
 import Finance  from './pages/ims/finance'
 import Sidebar from './pages/ims/sidebar'
+import RequireAuth from './auth/RequireAuth'
 
 
 function AppLayout (){
@@ -62,10 +63,10 @@ function AppLayout (){
 export default function App() {
   return (
     <Routes>
-      <Route path="/pos" element={<CashierPOS />} />
+      <Route path="/pos" element={<RequireAuth><CashierPOS /></RequireAuth>} />
       <Route path="/" element={<Login />} />
 
-      <Route element={<AppLayout />}>
+      <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route path="/adminDashboard" element={<AdminDashboard />} />
         <Route path="/inventoryList" element={<InventoryList />} />
         <Route path="/pages/ims/demand" element={<Demand />} />

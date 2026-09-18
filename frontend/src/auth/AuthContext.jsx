@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DEV_USERS, DEV_SUPERVISOR_PIN } from './devUsers';
+import { DEV_SUPERVISOR_PIN } from './devUsers';
 
+const API_BASE_URL = 'http://localhost:5000/api';
 const STORAGE_KEY = 'aims.auth';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -25,41 +26,53 @@ function writeStoredUser(user) {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(readStoredUser);
+  const [session, setSession] = useState(readStoredUser); // { token, id, username, role }
 
   useEffect(() => {
-    writeStoredUser(user);
-  }, [user]);
+    writeStoredUser(session);
+  }, [session]);
 
-  const login = useCallback((username, password) => {
+  const login = useCallback(async (username, password) => {
     const trimmed = (username || '').trim();
     if (!trimmed || !password) {
       throw new Error('Username and password are required.');
     }
-    const match = DEV_USERS.find(
-      (u) => u.username.toLowerCase() === trimmed.toLowerCase() && u.password === password,
-    );
-    if (!match) throw new Error('Invalid username or password.');
-    const authed = { id: match.id, username: match.username, role: match.role };
-    setUser(authed);
+
+    let res;
+    try {
+      res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: trimmed, password }),
+      });
+    } catch {
+      throw new Error('Could not reach the server. Check your connection and try again.');
+    }
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'Invalid username or password.');
+
+    const authed = { token: body.token, ...body.user };
+    setSession(authed);
     return authed;
   }, []);
 
-  const logout = useCallback(() => setUser(null), []);
+  const logout = useCallback(() => setSession(null), []);
 
   const authorizeSupervisor = useCallback((pin) => pin === DEV_SUPERVISOR_PIN, []);
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    const user = session ? { id: session.id, username: session.username, role: session.role } : null;
+    return {
       user,
+      token: session?.token || null,
       role: user?.role || null,
-      isAuthenticated: !!user,
+      isAuthenticated: !!session,
       login,
       logout,
       authorizeSupervisor,
-    }),
-    [user, login, logout, authorizeSupervisor],
-  );
+    };
+  }, [session, login, logout, authorizeSupervisor]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

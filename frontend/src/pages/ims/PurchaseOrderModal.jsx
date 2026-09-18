@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, FileText, Loader2, PackageSearch } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const LOW_STOCK_THRESHOLD = 15;
@@ -49,16 +51,19 @@ async function downloadPurchaseOrderFile(purchaseOrder) {
 }
 
 export default function PurchaseOrderModal({ isOpen, onClose, products }) {
+  const { user, token, logout } = useAuth();
+  const navigate = useNavigate();
   const [groups, setGroups] = useState(() => buildSupplierGroups(products));
   const [terms, setTerms] = useState('N/A');
   const [remarks, setRemarks] = useState('');
-  const [preparedBy, setPreparedBy] = useState('');
+  const [preparedBy, setPreparedBy] = useState(user?.username || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
   // Rebuild the checklist from the latest product data whenever the modal is (re)opened
   const handleOpenReset = () => {
     setGroups(buildSupplierGroups(products));
+    setPreparedBy(user?.username || '');
     setError(null);
   };
 
@@ -116,9 +121,15 @@ export default function PurchaseOrderModal({ isOpen, onClose, products }) {
 
         const res = await fetch(`${API_BASE_URL}/purchase-orders`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ supplierId: group.supplierId, items, terms, remarks, preparedBy }),
         });
+
+        if (res.status === 401) {
+          logout();
+          navigate('/', { replace: true });
+          throw new Error('Your session is no longer valid. Please log in again.');
+        }
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
