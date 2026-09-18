@@ -1,1 +1,47 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Applied on body (not scoped to any wrapper) so portaled content — like
+   modals rendered into document.body — inherits the same typeface as the
+   rest of the app. */
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-zoom-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-modal-backdrop {
+  animation: modal-fade-in 200ms ease-out;
+}
+
+.animate-modal-card {
+  animation: modal-zoom-in 200ms ease-out;
+}
+
+.transparent-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}

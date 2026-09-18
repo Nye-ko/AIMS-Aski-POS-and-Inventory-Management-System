@@ -1,14 +1,84 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search, Trash2, ChevronDown, Plus, Minus, Store,
-  Lock, Clock, Banknote, X, Percent, Download
+  Search, Trash2, ChevronDown, Plus, Minus,
+  Lock, Clock, Banknote, X, Percent, Download, ShieldCheck,
+  Check, LayoutGrid, Sprout, Leaf, Wheat, SprayCan, Wrench,
+  Pill, PaintBucket, Package, ShoppingCart,
+  Wallet, LogOut, ShoppingBag, Milk, Palette, Coffee,
+  Soup, Cylinder, CheckCircle2
 } from 'lucide-react';
 import { exportCsv } from '../utils/exportCsv';
 import { useAuth } from '../auth/AuthContext';
 
+// Maps a product/category name to a distinct, representative lucide icon
+// for the dropdown menu and product card placeholders — every category
+// gets its own glyph (no repeated generic box/basket icon) — falls back
+// to a generic box icon only for categories we truly don't recognize.
+const CATEGORY_ICONS = {
+  seeds: Sprout,
+  fertilizers: Leaf,
+  feeds: Wheat,
+  pesticides: SprayCan,
+  tools: Wrench,
+  hardware: Wrench,
+  medicine: Pill,
+  pharmacy: Pill,
+  paint: PaintBucket,
+  paints: Palette,
+  grocery: ShoppingBag,
+  dairy: Milk,
+  bakery: Wheat,
+  snacks: ShoppingBag,
+  beverages: Coffee,
+  household: SprayCan,
+  pantry: Soup,
+  'canned goods': Cylinder,
+};
+
+const getCategoryIcon = (category) => {
+  if (!category) return Package;
+  return CATEGORY_ICONS[category.toLowerCase()] || Package;
+};
+
+function CategoryIcon({ category, className }) {
+  const Icon = getCategoryIcon(category);
+  // Icon is always one of the stable lucide component refs in CATEGORY_ICONS
+  // (or Package) — not a new component identity per render.
+  // eslint-disable-next-line react-hooks/static-components
+  return <Icon className={className} />;
+}
+
+const STAT_COLORS = {
+  indigo: { card: "bg-blue-50/50 border-l-4 border-blue-500", badge: "bg-blue-100 text-blue-600" },
+  emerald: { card: "bg-emerald-50/50 border-l-4 border-emerald-500", badge: "bg-emerald-100 text-emerald-600" },
+  amber: { card: "bg-amber-50/50 border-l-4 border-amber-500", badge: "bg-amber-100 text-amber-600" },
+  violet: { card: "bg-purple-50/50 border-l-4 border-purple-500", badge: "bg-purple-100 text-purple-600" },
+};
+
+function StatCard({ icon: Icon, color, label, value }) {
+  return (
+    <div className={`rounded-2xl shadow-md shadow-slate-200/60 p-4 flex items-center gap-3 ${STAT_COLORS[color].card}`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${STAT_COLORS[color].badge}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-lg font-extrabold text-slate-900 truncate">{value}</div>
+        <div className="text-[11px] text-slate-400 font-medium truncate">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good Morning";
+  if (hour < 18) return "Good Afternoon";
+  return "Good Evening";
+};
+
 export default function CashierPOS() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, authorizeSupervisor } = useAuth();
   const navigate = useNavigate();
 
   // A write failed with 401 because the session's JWT points at a user id
@@ -19,6 +89,11 @@ export default function CashierPOS() {
     alert('Your session is no longer valid. Please log in again.');
     navigate('/', { replace: true });
   };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/', { replace: true });
+  };
   // LIVE BACKEND STATES
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,15 +101,22 @@ export default function CashierPOS() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const categoryMenuRef = useRef(null);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
 
   const [cart, setCart] = useState([]);
 
-  // FEATURE 1: Supervisor Discount States
+  // FEATURE: Custom post-checkout success screen (replaces the native browser alert)
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [lastSale, setLastSale] = useState(null);
+
+  // FEATURE 1: Supervisor Discount States (percentage & fixed value stay in sync)
   const [discountPercent, setDiscountPercent] = useState(0);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [supervisorPassword, setSupervisorPassword] = useState("");
-  const [tempDiscountInput, setTempDiscountInput] = useState(10);
+  const [tempDiscountPercent, setTempDiscountPercent] = useState(0);
+  const [tempDiscountAmount, setTempDiscountAmount] = useState(0);
   const [discountError, setDiscountError] = useState("");
 
   // FEATURE 2: Pending Transactions States
@@ -42,6 +124,10 @@ export default function CashierPOS() {
   const [showPendingModal, setShowPendingModal] = useState(false);
 
   // FEATURE 3: End of Day / X-Reading Reconciliation States
+  const [showEODAuthModal, setShowEODAuthModal] = useState(false);
+  const [eodSupervisorPassword, setEodSupervisorPassword] = useState("");
+  const [eodAuthError, setEodAuthError] = useState("");
+  const [eodUnlocked, setEodUnlocked] = useState(false);
   const [showEODModal, setShowEODModal] = useState(false);
   const [expectedSales, setExpectedSales] = useState(0);
   const [grossSalesTotal, setGrossSalesTotal] = useState(0);
@@ -82,10 +168,22 @@ export default function CashierPOS() {
     fetchProducts();
   }, []);
 
+  // Close the category dropdown when clicking outside of it
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (categoryMenuRef.current && !categoryMenuRef.current.contains(e.target)) {
+        setCategoryMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // DERIVED CALCULATIONS FOR CART
   const subtotal = cart.reduce((sum, item) => sum + (Number(item.unitPrice) * item.quantity), 0);
   const discountAmount = (subtotal * discountPercent) / 100;
   const cartTotal = Math.max(0, subtotal - discountAmount);
+  const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // EOD Cash Calculation
   const totalCountedCash = (
@@ -102,6 +200,10 @@ export default function CashierPOS() {
   );
 
   const shortOver = totalCountedCash - expectedSales;
+
+  // Category options are derived from whatever the backend actually returns,
+  // rather than a fixed list — the dropdown always matches real inventory.
+  const categories = Array.from(new Set(products.map((p) => p.category).filter(Boolean)));
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -131,7 +233,8 @@ export default function CashierPOS() {
         id: product.id,
         name: product.name,
         unitPrice: Number(product.sellingPrice) || 0,
-        quantity: 1
+        quantity: 1,
+        category: product.category
       }];
     });
   };
@@ -165,16 +268,44 @@ export default function CashierPOS() {
     setDiscountPercent(0);
   };
 
+  // FEATURE 1: Discount Modal — opening syncs both fields to the currently applied discount
+  const handleOpenDiscountModal = () => {
+    const pct = discountPercent || 0;
+    setTempDiscountPercent(pct);
+    setTempDiscountAmount(subtotal > 0 ? Number(((subtotal * pct) / 100).toFixed(2)) : 0);
+    setSupervisorPassword("");
+    setDiscountError("");
+    setShowDiscountModal(true);
+  };
+
+  // Editing the percentage recalculates the fixed value from the live subtotal
+  const handlePercentInput = (value) => {
+    const pct = Math.min(100, Math.max(0, Number(value) || 0));
+    setTempDiscountPercent(pct);
+    setTempDiscountAmount(subtotal > 0 ? Number(((subtotal * pct) / 100).toFixed(2)) : 0);
+  };
+
+  // Editing the fixed value recalculates the percentage from the live subtotal
+  const handleAmountInput = (value) => {
+    const amt = Math.min(subtotal, Math.max(0, Number(value) || 0));
+    setTempDiscountAmount(amt);
+    setTempDiscountPercent(subtotal > 0 ? Number(((amt / subtotal) * 100).toFixed(2)) : 0);
+  };
+
   // FEATURE 1: Discount Authorization Logic
   const handleApplyDiscount = () => {
-    if (supervisorPassword === "super123") {
-      setDiscountPercent(Number(tempDiscountInput));
-      setShowDiscountModal(false);
-      setSupervisorPassword("");
-      setDiscountError("");
-    } else {
-      setDiscountError("Invalid Supervisor Password!");
+    if (subtotal <= 0) {
+      setDiscountError("Add items to the cart before applying a discount.");
+      return;
     }
+    if (!authorizeSupervisor(supervisorPassword)) {
+      setDiscountError("Invalid Supervisor Password!");
+      return;
+    }
+    setDiscountPercent(tempDiscountPercent);
+    setShowDiscountModal(false);
+    setSupervisorPassword("");
+    setDiscountError("");
   };
 
   // FEATURE 2: Park/Hold Sale Logic
@@ -243,10 +374,18 @@ const handleConfirmSale = async () => {
     const responseData = await response.json();
 
     if (response.ok) {
-      alert(`Transaction successful! PHP ${currentTotalAmount.toFixed(2)} recorded.`);
-
       // The backend prints the receipt automatically (silently, no dialog)
-      // right after saving the transaction — nothing to do here.
+      // right after saving the transaction — this in-app screen is just the
+      // cashier-facing confirmation, replacing the native browser alert().
+      setLastSale({
+        items: cart.map((item) => ({ ...item })),
+        subtotal: currentSubtotal,
+        discountPercent,
+        discountAmount: currentDiscountAmount,
+        total: currentTotalAmount,
+        paymentMethod,
+      });
+      setShowSuccessModal(true);
 
       handleClearCart();
       fetchProducts(); // Refresh stock counts from server
@@ -314,12 +453,42 @@ const handleConfirmSale = async () => {
     });
   };
 
+  // Opening X-Reading/EOD always starts at the supervisor gate — the
+  // denomination grid itself only renders once eodUnlocked flips true.
   const handleOpenEODModal = () => {
+    setEodSupervisorPassword("");
+    setEodAuthError("");
+    setShowEODAuthModal(true);
+  };
+
+  const handleAuthorizeEOD = () => {
+    if (!authorizeSupervisor(eodSupervisorPassword)) {
+      setEodAuthError("Invalid Supervisor Password!");
+      return;
+    }
+    setEodUnlocked(true);
+    setShowEODAuthModal(false);
+    setEodSupervisorPassword("");
+    setEodAuthError("");
     setShowEODModal(true);
     fetchExpectedCash();
   };
 
+  const handleCloseEODModal = () => {
+    setShowEODModal(false);
+    setEodUnlocked(false);
+  };
+
   const handleSubmitReconciliation = async () => {
+    // Defense-in-depth: the grid can only be reached via handleAuthorizeEOD,
+    // but re-check before writing the day's reconciliation record too.
+    if (!eodUnlocked) {
+      setShowEODModal(false);
+      setEodAuthError("Supervisor authorization required.");
+      setShowEODAuthModal(true);
+      return;
+    }
+
     const payload = {
       grossSales: grossSalesTotal || expectedSales,
       pointsAvailed: 0.00,
@@ -343,6 +512,7 @@ const handleConfirmSale = async () => {
         alert('Reconciliation saved successfully!');
         handleExportReport();
         setShowEODModal(false);
+        setEodUnlocked(false);
       } else if (res.status === 401) {
         handleStaleSession();
       } else {
@@ -356,7 +526,7 @@ const handleConfirmSale = async () => {
 
   if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[#EAE8FE] font-bold text-gray-700">
+      <div className="flex h-screen w-full items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50/60 to-indigo-50/40 font-bold text-slate-500">
         Loading inventory...
       </div>
     );
@@ -364,9 +534,9 @@ const handleConfirmSale = async () => {
 
   if (error) {
     return (
-      <div className="flex flex-col h-full w-full items-center justify-center bg-[#EAE8FE] gap-2">
-        <p className="text-red-600 font-bold">Failed to load inventory: {error}</p>
-        <button onClick={fetchProducts} className="px-4 py-1.5 bg-gray-800 text-white rounded-lg text-xs font-bold cursor-pointer">
+      <div className="flex flex-col h-screen w-full items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50/60 to-indigo-50/40 gap-2">
+        <p className="text-rose-600 font-bold">Failed to load inventory: {error}</p>
+        <button onClick={fetchProducts} className="px-5 py-2 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold cursor-pointer transition-all">
           Retry
         </button>
       </div>
@@ -374,332 +544,426 @@ const handleConfirmSale = async () => {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-full w-full bg-[#EAE8FE] p-4 gap-4 font-sans overflow-hidden box-border">
+    <div className="min-h-screen lg:h-screen w-full bg-gradient-to-br from-slate-100 via-blue-50/60 to-indigo-50/40 p-3 md:p-5 flex gap-3 md:gap-4 overflow-y-auto lg:overflow-hidden font-sans box-border">
 
-      {/* LEFT SECTION: PRODUCT CATALOG */}
-      <div className="flex-1 flex flex-col h-full min-h-0 bg-transparent">
+      {/* MAIN DASHBOARD SHELL — single canvas, no separate sidebar */}
+      <div className="flex-1 flex flex-col bg-white/80 rounded-3xl shadow-sm border border-indigo-100 p-4 md:p-6 min-h-0 lg:overflow-visible">
 
-        {/* Top Header */}
-        <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white shrink-0 shadow-sm">
-              <Store className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-extrabold text-gray-800 uppercase tracking-wide leading-tight">
-                ASKI MULTI-COOP
-              </h1>
-              <p className="text-xs font-semibold text-gray-500 leading-tight">
-                Isynergies, Inc.
-              </p>
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/aski.png" alt="ASKI Logo" className="h-8 w-auto shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">{getGreeting()}, {user?.username || 'Cashier'}</h1>
+              <p className="hidden sm:block text-xs text-slate-400 mt-0.5">ASKI Multi-Coop &middot; Cashier POS Terminal</p>
             </div>
           </div>
 
-          {/* EOD & Pending Actions Toolbar */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               onClick={() => setShowPendingModal(true)}
-              className="relative px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              className="relative flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-blue-600 px-3 sm:px-3.5 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
             >
               <Clock className="w-4 h-4" />
-              Pending
+              <span className="hidden sm:inline">Pending Sales</span>
               {pendingSales.length > 0 && (
-                <span className="ml-1 bg-amber-600 text-white rounded-full text-[10px] w-4 h-4 flex items-center justify-center">
+                <span className="ml-0.5 bg-[#0B132B] text-white rounded-full text-[9px] w-4 h-4 flex items-center justify-center">
                   {pendingSales.length}
                 </span>
               )}
             </button>
-
             <button
+              type="button"
               onClick={handleOpenEODModal}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-black text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-blue-600 px-3 sm:px-3.5 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
             >
               <Banknote className="w-4 h-4" />
-              X-Reading / EOD
+              <span className="hidden sm:inline">X-Reading / EOD</span>
             </button>
-          </div>
-        </div>
-
-        {/* Controls Bar */}
-        <div className="flex flex-wrap items-center gap-2 mb-3 shrink-0">
-          <button
-            onClick={() => setSelectedCategory("All")}
-            className={`px-4 py-1.5 rounded-full font-medium shadow-sm transition-colors text-xs cursor-pointer ${selectedCategory === "All"
-              ? "bg-white text-gray-800 border border-gray-200"
-              : "bg-gray-200/70 text-gray-600 hover:bg-gray-200"
-              }`}
-          >
-            All Products
-          </button>
-
-          <div className="relative">
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="appearance-none bg-gray-200/80 text-gray-600 pl-3 pr-8 py-1.5 rounded-full text-xs font-medium focus:outline-none cursor-pointer"
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 hover:border-rose-300 hover:text-rose-500 px-3 sm:px-3.5 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
             >
-              <option value="All">Select Category</option>
-              <option value="Seeds">Seeds</option>
-              <option value="Fertilizers">Fertilizers</option>
-              <option value="Feeds">Feeds</option>
-              <option value="Pesticides">Pesticides</option>
-              <option value="Tools">Tools</option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-
-          <div className="relative flex-1 max-w-xs ml-auto">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-gray-200/80 text-gray-700 pl-8 pr-3 py-1.5 rounded-full text-xs focus:outline-none placeholder-gray-400"
-            />
-          </div>
-        </div>
-
-        {/* Product Grid */}
-        <div className="flex-1 bg-[#F5F2F0] rounded-2xl p-3 overflow-y-auto min-h-0 shadow-inner">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {filteredProducts.map((product) => (
-              <div
-                key={product.id}
-                onClick={() => handleAddToCart(product)}
-                className="bg-gray-300 rounded-xl p-2.5 flex flex-col justify-between cursor-pointer hover:bg-gray-400/80 transition-all border border-gray-300/50"
-              >
-                <div className="bg-white rounded-lg h-20 w-full flex items-center justify-center mb-2">
-                  <Store className="w-5 h-5 text-gray-400" />
-                </div>
-                <div className="text-gray-800 font-medium text-xs">
-                  <div className="truncate font-semibold">{product.name}</div>
-                  <div className="flex justify-between items-center mt-0.5">
-                    <span className="text-gray-600 font-bold">
-                      PHP {Number(product.sellingPrice || 0).toFixed(2)}
-                    </span>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${product.stock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
-                      Stock: {product.stock}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* RIGHT SECTION: ORDER DETAILS */}
-      <div className="w-full lg:w-80 xl:w-88 bg-[#FAF7F5] rounded-2xl p-4 flex flex-col h-full min-h-0 shadow-lg border border-gray-100 shrink-0">
-
-        <div className="flex justify-between items-center mb-2 shrink-0">
-          <h2 className="text-base font-bold text-gray-900">Order Details</h2>
-          <button
-            onClick={handleHoldSale}
-            disabled={cart.length === 0}
-            className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Hold Sale
-          </button>
-        </div>
-        <hr className="border-gray-200 mb-2 shrink-0" />
-
-        {/* Cart Item List */}
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1 mb-2 min-h-0">
-          {cart.length === 0 ? (
-            <div className="text-center py-6 text-gray-400 text-xs">Cart is empty</div>
-          ) : (
-            cart.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-lg p-2 shadow-sm border border-gray-100 flex items-center justify-between text-xs"
-              >
-                <div>
-                  <h4 className="font-semibold text-gray-800 text-xs">{item.name}</h4>
-                  <span className="text-[11px] text-gray-500 font-medium">
-                    {Number(item.unitPrice || 0).toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="text-right flex flex-col items-end gap-1">
-                  <span className="font-bold text-xs text-gray-900">
-                    PHP {(Number(item.unitPrice || 0) * item.quantity).toFixed(2)}
-                  </span>
-                  <div className="flex items-center gap-1 bg-gray-100 px-1.5 py-0.5 rounded-full border border-gray-200">
-                    <button onClick={() => handleUpdateQuantity(item.id, -1)} className="text-gray-600 hover:text-black p-0.5 cursor-pointer">
-                      <Minus className="w-2.5 h-2.5" />
-                    </button>
-                    <span className="font-semibold text-[11px] px-0.5 min-w-[10px] text-center">
-                      {item.quantity}
-                    </span>
-                    <button onClick={() => handleUpdateQuantity(item.id, 1)} className="text-gray-600 hover:text-black p-0.5 cursor-pointer">
-                      <Plus className="w-2.5 h-2.5" />
-                    </button>
-                    <button onClick={() => handleRemoveItem(item.id)} className="text-gray-400 hover:text-red-500 ml-0.5 p-0.5 cursor-pointer">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Total Summary Row & Discount Trigger */}
-        <div className="border-t border-gray-200 pt-2 mb-2 shrink-0 space-y-1">
-          <div className="flex justify-between items-center text-xs text-gray-600">
-            <span>Subtotal:</span>
-            <span>PHP {subtotal.toFixed(2)}</span>
-          </div>
-
-          {discountPercent > 0 && (
-            <div className="flex justify-between items-center text-xs text-emerald-700 font-semibold">
-              <span>Discount ({discountPercent}%):</span>
-              <span>- PHP {discountAmount.toFixed(2)}</span>
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0B132B] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
+              {(user?.username || "C").charAt(0).toUpperCase()}
             </div>
-          )}
-
-          <div className="flex justify-between items-center pt-1">
-            <span className="text-sm font-bold text-gray-800">Total:</span>
-            <span className="text-base font-extrabold text-gray-900">
-              PHP {cartTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
           </div>
-
-          <button
-            onClick={() => setShowDiscountModal(true)}
-            className="w-full text-left text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 mt-1 cursor-pointer"
-          >
-            <Percent className="w-3 h-3" />
-            {discountPercent > 0 ? "Change Discount" : "Apply Supervisor Discount"}
-          </button>
         </div>
 
-        {/* Payment Options */}
-        <div className="space-y-1 mb-3 shrink-0">
-          <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-            Payment Method
-          </label>
-          {["Cash", "Card", "E-wallet"].map((method) => (
-            <label
-              key={method}
-              onClick={() => setPaymentMethod(method)}
-              className={`flex items-center gap-2 w-full p-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${paymentMethod === method
-                ? "bg-white border-gray-400 shadow-sm text-gray-800"
-                : "bg-white/60 border-transparent text-gray-500 hover:bg-white"
-                }`}
-            >
-              <div
-                className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${paymentMethod === method ? "border-gray-700 bg-gray-700" : "border-gray-300"
+        {/* Quick stat cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 shrink-0">
+          <StatCard icon={ShoppingCart} color="indigo" label="Items in Cart" value={cartItemCount} />
+          <StatCard icon={Wallet} color="emerald" label="Cart Subtotal" value={`PHP ${subtotal.toFixed(2)}`} />
+          <StatCard icon={Clock} color="amber" label="On Hold" value={pendingSales.length} />
+          <StatCard icon={Package} color="violet" label="In Catalog" value={products.length} />
+        </div>
+
+        {/* Content: catalog + order panel */}
+        <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
+
+          {/* LEFT: PRODUCT CATALOG */}
+          <div className="flex-1 flex flex-col min-h-[520px] lg:min-h-0 bg-indigo-50/40 rounded-2xl p-4 border border-indigo-100">
+            <div className="flex items-center justify-between mb-3 shrink-0">
+              <h2 className="text-sm font-bold text-slate-800">Product Catalog</h2>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </div>
+
+            {/* Controls Bar */}
+            <div className="flex flex-wrap items-center gap-2 mb-3 shrink-0">
+              <button
+                onClick={() => setSelectedCategory("All")}
+                className={`px-4 py-2 rounded-full font-semibold transition-all text-xs cursor-pointer ${selectedCategory === "All"
+                  ? "bg-[#0B132B] text-white shadow-md shadow-slate-900/20"
+                  : "bg-white border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"
                   }`}
               >
-                {paymentMethod === method && <div className="w-1 h-1 rounded-full bg-white" />}
+                All Products
+              </button>
+
+              {/* Custom dropdown with category icons */}
+              <div className="relative" ref={categoryMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setCategoryMenuOpen((o) => !o)}
+                  className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 pl-3 pr-3 py-2 rounded-xl text-xs font-medium hover:border-indigo-300 transition-colors cursor-pointer"
+                >
+                  {selectedCategory === "All" ? (
+                    <LayoutGrid className="w-3.5 h-3.5 text-blue-500" />
+                  ) : (
+                    <CategoryIcon category={selectedCategory} className="w-3.5 h-3.5 text-blue-500" />
+                  )}
+                  {selectedCategory === "All" ? "Select Category" : selectedCategory}
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${categoryMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {categoryMenuOpen && (
+                  <div className="absolute top-full left-0 mt-2 min-w-[200px] w-max max-w-xs bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1.5 max-h-64 overflow-y-auto">
+                    {categories.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-slate-400">No categories yet</p>
+                    ) : (
+                      categories.map((cat) => {
+                        const active = selectedCategory === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => { setSelectedCategory(cat); setCategoryMenuOpen(false); }}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? "bg-blue-50 text-blue-600" : "text-slate-600 hover:bg-slate-50"}`}
+                          >
+                            <CategoryIcon category={cat} className="w-3.5 h-3.5" />
+                            <span className="flex-1 text-left">{cat}</span>
+                            {active && <Check className="w-3.5 h-3.5" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
-              {method}
-            </label>
-          ))}
-        </div>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-2 shrink-0">
-          <button
-            onClick={handleClearCart}
-            className="py-2 bg-[#C2B8B3] hover:bg-[#b2a7a1] text-gray-800 text-xs font-bold rounded-lg transition-colors cursor-pointer"
-          >
-            Clear
-          </button>
-          <button
-            onClick={handleConfirmSale}
-            disabled={cart.length === 0}
-            className="py-2 bg-[#B8ADA7] hover:bg-[#a89c96] text-gray-900 text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Confirm
-          </button>
-        </div>
+              <div className="relative w-full sm:flex-1 sm:max-w-xs sm:ml-auto">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-white text-slate-700 border border-slate-200 pl-9 pr-4 py-2 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 placeholder-slate-400 transition-all"
+                />
+              </div>
+            </div>
 
+            {/* Product Grid */}
+            <div className="flex-1 bg-white/80 rounded-2xl p-3 overflow-y-auto min-h-0 border border-indigo-100 shadow-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredProducts.map((product) => (
+                  <div
+                    key={product.id}
+                    onClick={() => handleAddToCart(product)}
+                    className="bg-white/90 rounded-2xl p-3 flex flex-col justify-between cursor-pointer border border-indigo-100/80 shadow-sm hover:border-blue-400 hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5 transition-all duration-200"
+                  >
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-100/60 rounded-xl h-20 w-full flex items-center justify-center mb-2.5">
+                      <div className="bg-white/80 p-3 rounded-full shadow-sm">
+                        <CategoryIcon category={product.category} className="w-5 h-5 text-indigo-600" />
+                      </div>
+                    </div>
+                    <div className="text-slate-800 font-medium text-xs">
+                      <div className="truncate font-semibold text-slate-900">{product.name}</div>
+                      <div className="flex justify-between items-center mt-1.5">
+                        <span className="text-slate-900 font-bold">
+                          PHP {Number(product.sellingPrice || 0).toFixed(2)}
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${product.stock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                          Stock: {product.stock}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: ORDER DETAILS */}
+          <div className="w-full lg:w-80 xl:w-96 flex flex-col gap-3 min-h-[520px] lg:min-h-0 lg:h-full shrink-0">
+
+            {/* Hero total card — kept compact so it doesn't crowd the cart below */}
+            <div className="relative overflow-hidden bg-[#0B132B] rounded-2xl p-3 text-white shrink-0 shadow-lg shadow-slate-900/30">
+              <div className="relative z-10 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium text-white/60">Amount Due</p>
+                  <p className="text-lg font-extrabold mt-0.5 truncate">
+                    PHP {cartTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-white/50">Subtotal: PHP {subtotal.toFixed(2)}</p>
+                </div>
+
+                <div className="relative w-11 h-11 shrink-0">
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{ background: `conic-gradient(#22d3ee ${Math.min(100, discountPercent) * 3.6}deg, rgba(255,255,255,0.15) 0deg)` }}
+                  />
+                  <div className="absolute inset-[4px] bg-[#0B132B] rounded-full flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-cyan-300">{discountPercent}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleOpenDiscountModal}
+                className="relative z-10 mt-2 w-full flex items-center justify-center gap-1.5 bg-white/10 hover:bg-white/20 rounded-full py-1.5 text-[11px] font-bold transition-colors cursor-pointer backdrop-blur-sm"
+              >
+                <Percent className="w-3 h-3 text-cyan-300" />
+                {discountPercent > 0 ? "Change Discount" : "Apply Supervisor Discount"}
+              </button>
+
+              {discountPercent > 0 && (
+                <p className="relative z-10 text-[10px] text-emerald-400 font-semibold mt-1.5 text-center">
+                  Discount applied: - PHP {discountAmount.toFixed(2)}
+                </p>
+              )}
+
+              <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+            </div>
+
+            {/* Cart list card */}
+            <div className="flex-1 bg-slate-50/80 rounded-2xl border border-slate-200/80 shadow-sm p-4 flex flex-col min-h-0">
+              <div className="flex justify-between items-center mb-2 shrink-0">
+                <h2 className="text-sm font-bold text-slate-900">Order Details</h2>
+                <button
+                  onClick={handleHoldSale}
+                  disabled={cart.length === 0}
+                  className="text-[11px] font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-full transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Hold Sale
+                </button>
+              </div>
+              <hr className="border-slate-100 mb-2 shrink-0" />
+
+              {/* Cart Item List */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 mb-3 min-h-0">
+                {cart.length === 0 ? (
+                  <div className="text-center py-6 text-slate-400 text-xs">Cart is empty</div>
+                ) : (
+                  cart.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-white rounded-xl p-2.5 border border-indigo-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200 flex items-center gap-2.5 text-xs"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100/60 flex items-center justify-center shrink-0">
+                        <CategoryIcon category={item.category} className="w-4 h-4 text-indigo-600" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-semibold text-slate-800 text-xs truncate">{item.name}</h4>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          PHP {Number(item.unitPrice || 0).toFixed(2)} each
+                        </span>
+                      </div>
+
+                      <div className="text-right flex flex-col items-end gap-1 shrink-0">
+                        <span className="font-bold text-xs text-slate-900">
+                          PHP {(Number(item.unitPrice || 0) * item.quantity).toFixed(2)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1 bg-slate-50 px-1 py-0.5 rounded-full border border-slate-200">
+                            <button onClick={() => handleUpdateQuantity(item.id, -1)} className="text-blue-500 hover:text-blue-700 p-0.5 cursor-pointer">
+                              <Minus className="w-2.5 h-2.5" />
+                            </button>
+                            <span className="font-semibold text-[11px] px-0.5 min-w-[10px] text-center text-slate-800">
+                              {item.quantity}
+                            </span>
+                            <button onClick={() => handleUpdateQuantity(item.id, 1)} className="text-blue-500 hover:text-blue-700 p-0.5 cursor-pointer">
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                          <button onClick={() => handleRemoveItem(item.id)} className="w-5 h-5 flex items-center justify-center rounded-full bg-rose-50 text-rose-500 hover:bg-rose-100 hover:text-rose-600 cursor-pointer transition-colors shrink-0">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Payment Options */}
+              <div className="mb-3 shrink-0">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {["Cash", "Card", "E-wallet"].map((method) => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setPaymentMethod(method)}
+                      className={`py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${paymentMethod === method
+                        ? "bg-[#0B132B] text-cyan-300 shadow-md shadow-slate-900/20"
+                        : "bg-slate-50 border border-slate-200 text-slate-500 hover:border-indigo-300"
+                        }`}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-2 shrink-0">
+                <button
+                  onClick={handleClearCart}
+                  className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-full transition-colors cursor-pointer"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={handleConfirmSale}
+                  disabled={cart.length === 0}
+                  className="py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white text-xs font-bold rounded-full transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
-      {/* --- MODAL 1: SUPERVISOR DISCOUNT AUTHORIZATION --- */}
+      {/* --- MODAL 1: SUPERVISOR DISCOUNT (BI-DIRECTIONAL % / VALUE) --- */}
       {showDiscountModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-xs shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-2">
-              <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-amber-600" />
-                Supervisor Approval
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-[#0B132B]" />
+                Supervisor Discount
               </h3>
-              <button onClick={() => setShowDiscountModal(false)} className="cursor-pointer">
-                <X className="w-4 h-4 text-gray-500" />
+              <button onClick={() => setShowDiscountModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Discount Percentage (%)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={tempDiscountInput}
-                  onChange={(e) => setTempDiscountInput(e.target.value)}
-                  className="w-full border rounded-lg p-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400"
-                />
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Percentage (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={tempDiscountPercent === 0 ? '' : tempDiscountPercent}
+                    placeholder="0"
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handlePercentInput(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Value (₱)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={subtotal}
+                    step="0.01"
+                    value={tempDiscountAmount === 0 ? '' : tempDiscountAmount}
+                    placeholder="0"
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handleAmountInput(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                  />
+                </div>
               </div>
+              <p className="text-[10px] text-slate-400 font-medium">
+                Subtotal: PHP {subtotal.toFixed(2)} — editing either field recalculates the other.
+              </p>
 
               <div>
-                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Supervisor Password</label>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor Password</label>
                 <input
                   type="password"
-                  placeholder="Enter Password (super123)"
+                  placeholder="Enter supervisor password"
                   value={supervisorPassword}
                   onChange={(e) => setSupervisorPassword(e.target.value)}
-                  className="w-full border rounded-lg p-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400"
+                  onKeyDown={(e) => e.key === 'Enter' && handleApplyDiscount()}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
                 />
               </div>
 
               {discountError && (
-                <p className="text-[11px] font-bold text-red-500">{discountError}</p>
+                <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-xs font-semibold">
+                  {discountError}
+                </div>
               )}
             </div>
 
-            <button
-              onClick={handleApplyDiscount}
-              className="w-full py-2 bg-gray-800 hover:bg-black text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-            >
-              Authorize & Apply
-            </button>
+            <div className="p-5 border-t border-slate-100">
+              <button
+                onClick={handleApplyDiscount}
+                className="w-full py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+              >
+                Authorize & Apply
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* --- MODAL 2: PENDING SALES AREA --- */}
       {showPendingModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-2">
-              <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-amber-600" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md border border-slate-100 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#0B132B]" />
                 Pending Sales Queue
               </h3>
-              <button onClick={() => setShowPendingModal(false)} className="cursor-pointer">
-                <X className="w-4 h-4 text-gray-500" />
+              <button onClick={() => setShowPendingModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+            <div className="p-5 max-h-60 overflow-y-auto space-y-2">
               {pendingSales.length === 0 ? (
-                <p className="text-center text-xs text-gray-400 py-6">No sales on hold</p>
+                <p className="text-center text-xs text-slate-400 py-6">No sales on hold</p>
               ) : (
                 pendingSales.map((item) => (
-                  <div key={item.id} className="p-3 bg-gray-50 border rounded-xl flex items-center justify-between text-xs">
+                  <div key={item.id} className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center justify-between text-xs">
                     <div>
-                      <div className="font-bold text-gray-800">{item.id} ({item.timestamp})</div>
-                      <div className="text-gray-500 text-[11px]">{item.cart.length} item(s)</div>
-                      <div className="font-semibold text-gray-900 mt-0.5">PHP {item.total.toFixed(2)}</div>
+                      <div className="font-bold text-slate-800">{item.id} ({item.timestamp})</div>
+                      <div className="text-slate-500 text-[11px]">{item.cart.length} item(s)</div>
+                      <div className="font-semibold text-slate-900 mt-0.5">PHP {item.total.toFixed(2)}</div>
                     </div>
                     <button
                       onClick={() => handleRestorePendingSale(item)}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs cursor-pointer"
+                      className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:shadow-amber-500/20 shadow-md text-white rounded-full font-bold text-xs cursor-pointer"
                     >
                       Resume
                     </button>
@@ -711,34 +975,90 @@ const handleConfirmSale = async () => {
         </div>
       )}
 
-      {/* --- MODAL 3: END OF DAY / X-READING RECONCILIATION --- */}
-      {showEODModal && (
+      {/* --- MODAL 3: SUPERVISOR AUTHORIZATION GATE FOR X-READING / EOD --- */}
+      {showEODAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#0B132B]" />
+                Supervisor Authorization
+              </h3>
+              <button onClick={() => setShowEODAuthModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-slate-500 font-medium">
+                Enter the supervisor password to access X-Reading / EOD reconciliation.
+              </p>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor Password</label>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder="Enter supervisor password"
+                  value={eodSupervisorPassword}
+                  onChange={(e) => setEodSupervisorPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAuthorizeEOD()}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                />
+              </div>
+
+              {eodAuthError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-xs font-semibold">
+                  {eodAuthError}
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setShowEODAuthModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-full transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAuthorizeEOD}
+                className="px-4 py-2 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white font-bold text-xs rounded-full transition-all cursor-pointer"
+              >
+                Unlock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 4: END OF DAY / X-READING RECONCILIATION (supervisor-gated) --- */}
+      {showEODModal && eodUnlocked && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4"
-          onClick={(e) => e.target === e.currentTarget && setShowEODModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          onClick={(e) => e.target === e.currentTarget && handleCloseEODModal()}
         >
-          <div className="bg-white rounded-2xl p-5 w-full max-w-lg shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-100 max-h-[90vh] flex flex-col">
 
             {/* Header */}
-            <div className="flex justify-between items-center border-b pb-2 shrink-0">
-              <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-                <Banknote className="w-4 h-4 text-emerald-700" />
+            <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Banknote className="w-4 h-4 text-[#0B132B]" />
                 X-Reading / Cashier Accountability
               </h3>
               <button
-                onClick={() => setShowEODModal(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg text-gray-500 cursor-pointer"
+                onClick={handleCloseEODModal}
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2 min-h-0">
-              <p className="text-xs text-gray-500 font-medium">Input physical cash denomination quantities:</p>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 min-h-0">
+              <p className="text-xs text-slate-500 font-medium">Input physical cash denomination quantities:</p>
 
               {/* DENOMINATIONS INPUT GRID */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {[
                   { label: "₱1,000.00 Note", key: "p1000" },
                   { label: "₱500.00 Note", key: "p500" },
@@ -751,8 +1071,8 @@ const handleConfirmSale = async () => {
                   { label: "₱1.00 Coin", key: "p1" },
                   { label: "₱0.25 Coin", key: "c25" },
                 ].map((denom) => (
-                  <div key={denom.key} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg border border-gray-200">
-                    <span className="font-semibold text-gray-700">{denom.label}</span>
+                  <div key={denom.key} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="font-semibold text-slate-700">{denom.label}</span>
                     <input
                       type="number"
                       min="0"
@@ -760,29 +1080,29 @@ const handleConfirmSale = async () => {
                       placeholder="0"
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => handleDenominationChange(denom.key, e.target.value)}
-                      className="w-16 border rounded p-1 text-center font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                      className="w-16 border border-slate-200 rounded-lg p-1 text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 bg-white transition-all"
                     />
                   </div>
                 ))}
               </div>
 
               {/* Reconciliation Audit Box */}
-              <div className="p-3 bg-gray-100 rounded-xl space-y-1.5 text-xs">
-                <div className="flex justify-between font-medium text-gray-600">
+              <div className="p-3 bg-indigo-50/60 rounded-xl space-y-1.5 text-xs border border-indigo-100">
+                <div className="flex justify-between font-medium text-slate-600">
                   <span>Cashier Cash (Counted):</span>
-                  <span className="font-bold text-gray-800">
+                  <span className="font-bold text-slate-800">
                     PHP {totalCountedCash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex justify-between font-medium text-gray-600">
+                <div className="flex justify-between font-medium text-slate-600">
                   <span>POS Cash (Expected):</span>
-                  <span className="font-bold text-gray-800">
+                  <span className="font-bold text-slate-800">
                     PHP {expectedSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex justify-between font-bold border-t border-gray-300 pt-1 text-sm">
+                <div className="flex justify-between font-bold border-t border-indigo-200 pt-1 text-sm">
                   <span>Short / Over:</span>
-                  <span className={shortOver < 0 ? "text-red-600" : shortOver > 0 ? "text-emerald-700" : "text-gray-800"}>
+                  <span className={shortOver < 0 ? "text-rose-600" : shortOver > 0 ? "text-emerald-600" : "text-slate-800"}>
                     PHP {shortOver.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -790,11 +1110,11 @@ const handleConfirmSale = async () => {
             </div>
 
             {/* Footer Actions */}
-            <div className="grid grid-cols-2 gap-2 shrink-0 pt-1 border-t border-gray-100">
+            <div className="grid grid-cols-2 gap-2 shrink-0 p-5 border-t border-slate-100">
               <button
                 type="button"
                 onClick={handleExportReport}
-                className="py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                className="py-2.5 bg-white hover:bg-slate-50 text-[#0B132B] border border-slate-200 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 Export X-Reading
@@ -803,12 +1123,75 @@ const handleConfirmSale = async () => {
               <button
                 type="button"
                 onClick={handleSubmitReconciliation}
-                className="py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                className="py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 Submit Reconciliation
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 5: CHECKOUT SUCCESS (custom in-app confirmation, replaces the native browser alert) --- */}
+      {showSuccessModal && lastSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm border border-slate-100 max-h-[90vh] flex flex-col overflow-hidden">
+
+            <div className="relative overflow-hidden bg-[#0B132B] px-6 pt-7 pb-6 text-center shrink-0">
+              <div className="absolute -top-8 -right-8 w-28 h-28 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="relative z-10 mx-auto w-14 h-14 rounded-full bg-emerald-500/15 flex items-center justify-center mb-3">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+              </div>
+              <h3 className="relative z-10 text-white font-extrabold text-base">Payment Successful</h3>
+              <p className="relative z-10 text-white/60 text-[11px] mt-1">Transaction recorded &amp; receipt printed</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div className="text-center">
+                <p className="text-[11px] text-slate-400 font-medium">Total Amount</p>
+                <p className="text-2xl font-extrabold text-slate-900 mt-0.5">
+                  PHP {lastSale.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+
+              <div className="border border-slate-100 rounded-xl divide-y divide-slate-100">
+                {lastSale.items.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between px-3 py-2 text-xs">
+                    <span className="text-slate-600 font-medium truncate mr-2">{item.name} &times;{item.quantity}</span>
+                    <span className="font-semibold text-slate-800 shrink-0">
+                      PHP {(Number(item.unitPrice || 0) * item.quantity).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-3 space-y-1 text-xs">
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Subtotal</span>
+                  <span>PHP {lastSale.subtotal.toFixed(2)}</span>
+                </div>
+                {lastSale.discountPercent > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-semibold">
+                    <span>Discount ({lastSale.discountPercent}%)</span>
+                    <span>- PHP {lastSale.discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Payment Method</span>
+                  <span className="font-bold text-slate-800">{lastSale.paymentMethod}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-slate-100 shrink-0">
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+              >
+                New Sale
+              </button>
+            </div>
           </div>
         </div>
       )}

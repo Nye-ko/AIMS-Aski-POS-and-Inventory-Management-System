@@ -271,54 +271,57 @@ export default function Finance() {
         </div>
 
         {/* 3: CASH DRAWER VARIANCE AUDIT */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-l from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 p-6 shadow-xl shadow-blue-500/10 flex flex-col justify-between">
+        <div className="relative overflow-hidden rounded-3xl bg-[#0B132B] border border-blue-900/40 p-6 shadow-xl shadow-slate-950/20 flex flex-col justify-between">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Register Variance Audit</h3>
-            <p className="text-xs text-slate-500 mb-4">Shift reconciliation balance check</p>
+            <h3 className="text-lg font-bold text-white">Register Variance Audit</h3>
+            <p className="text-xs text-slate-400 mb-4">Shift reconciliation balance check</p>
           </div>
 
           <div className="h-48 w-full relative z-10 mb-4">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart layout="vertical" data={registerVarianceData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                <XAxis type="number" stroke="#64748b" fontSize={11} tickFormatter={(val) => `₱${val}`} />
-                <YAxis dataKey="shift" type="category" stroke="#64748b" fontSize={11} width={80} tickLine={false} />
-                <Tooltip 
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                <XAxis type="number" stroke="#E2E8F0" fontSize={11} tickFormatter={(val) => `₱${val}`} />
+                <YAxis dataKey="shift" type="category" stroke="#E2E8F0" fontSize={11} width={80} tickLine={false} />
+                <Tooltip
                   formatter={(value) => [`₱${value}`, 'Variance']}
-                  contentStyle={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+                  contentStyle={{
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
                     borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.8)'
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#fff'
                   }}
+                  labelStyle={{ color: '#E2E8F0' }}
+                  itemStyle={{ color: '#fff' }}
                 />
-                <ReferenceLine x={0} stroke="#94a3b8" strokeWidth={2} />
-                <Bar 
-                  dataKey="variance" 
-                  fill="#f43f5e"
-                  radius={[4, 4, 4, 4]} 
+                <ReferenceLine x={0} stroke="#64748b" strokeWidth={2} />
+                <Bar
+                  dataKey="variance"
+                  fill="#FFFFFF"
+                  radius={[4, 4, 4, 4]}
                 />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           {/* Mini Shift Audit Log List */}
-          <div className="space-y-2 relative z-10 border-t border-slate-200/60 pt-3 max-h-40 overflow-y-auto">
+          <div className="space-y-2 relative z-10 border-t border-slate-800 pt-3 max-h-40 overflow-y-auto transparent-scrollbar">
             {registerVarianceData.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-2">No shift log data available</p>
+              <p className="text-xs text-slate-500 text-center py-2">No shift log data available</p>
             ) : (
               registerVarianceData.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
+                <div key={idx} className="flex items-center justify-between text-xs px-3 py-2 mb-1.5 last:mb-0 bg-slate-900/60 border border-slate-800/80 rounded-xl">
                   <div className="flex items-center gap-1.5">
                     {item.variance < 0 ? (
-                      <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
                     ) : item.variance > 0 ? (
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
                     ) : (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                     )}
-                    <span className="font-bold text-slate-700">{item.cashier || item.shift}</span>
+                    <span className="font-bold text-white">{item.cashier || item.shift}</span>
                   </div>
-                  <span className={`font-black ${item.variance < 0 ? 'text-rose-600' : item.variance > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
+                  <span className={`font-black ${item.variance < 0 ? 'text-rose-400' : item.variance > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                     {item.variance === 0 ? '₱0 (Balanced)' : `₱${item.variance}`}
                   </span>
                 </div>

@@ -76,6 +76,19 @@ const PurchaseOrderModel = {
     });
   },
 
+  // All Purchase Orders (any status), for the "Purchase Orders" browse window
+  findAll: async (search) => {
+    return prisma.purchaseOrder.findMany({
+      where: search ? { poNumber: { contains: search, mode: 'insensitive' } } : undefined,
+      include: {
+        supplier: true,
+        items: { include: { product: true } },
+        receivingReport: { select: { id: true, rrNumber: true, receivedAt: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  },
+
   // Purchase Orders awaiting a Receiving Report, for the "Create Receiving Report" picker
   findPending: async () => {
     return prisma.purchaseOrder.findMany({
@@ -86,6 +99,18 @@ const PurchaseOrderModel = {
       },
       orderBy: { createdAt: 'desc' },
     });
+  },
+
+  delete: async (id) => {
+    const purchaseOrder = await prisma.purchaseOrder.findUnique({
+      where: { id: parseInt(id) },
+      include: { receivingReport: true },
+    });
+    if (!purchaseOrder) throw new Error('Purchase order not found');
+    if (purchaseOrder.receivingReport) {
+      throw new Error('This purchase order already has a receiving report and cannot be deleted.');
+    }
+    await prisma.purchaseOrder.delete({ where: { id: parseInt(id) } });
   },
 };
 

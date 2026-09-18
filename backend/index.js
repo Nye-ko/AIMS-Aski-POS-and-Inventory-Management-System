@@ -24,6 +24,7 @@ const { buildReceivingReportWorkbook } = require('./services/receivingReportExce
 const { PurchaseReturnModel } = require('./models/PurchaseReturn');
 const { buildPurchaseReturnWorkbook } = require('./services/purchaseReturnExcel');
 const { AuthModel, authenticateToken, STALE_SESSION_ERROR } = require('./models/Auth');
+const { UserModel } = require('./models/User');
 
 // Import Services
 const mailer = require('./services/mailer');
@@ -73,6 +74,80 @@ app.post('/api/auth/login', async (req, res) => {
 // Lets the frontend verify a stored token is still valid (e.g. on page reload).
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   res.json({ user: req.user });
+});
+
+// Re-verifies the caller's own password. Used to gate sensitive admin screens
+// (e.g. User Management) behind a fresh password prompt on top of the session JWT.
+app.post('/api/auth/verify-password', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required.' });
+    }
+    await AuthModel.verifyPassword(req.user.id, req.body.password);
+    res.json({ valid: true });
+  } catch (error) {
+    res.status(401).json({ error: error.message || 'Invalid admin password. Access denied.' });
+  }
+});
+
+// Only admins may manage user accounts. Must run after authenticateToken so req.user is set.
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Admin access required.' });
+  }
+  next();
+}
+
+// --- USER MANAGEMENT ROUTES (admin only) ---
+app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await UserModel.findAll();
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { fullName, username, password, role } = req.body;
+    const user = await UserModel.create({ fullName, username, password, role });
+    res.status(201).json(user);
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(400).json({ error: error.message || 'Failed to create user' });
+  }
+});
+
+app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await UserModel.updateRole(req.params.id, req.body.role);
+    res.json(user);
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    res.status(400).json({ error: error.message || 'Failed to update role' });
+  }
+});
+
+app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await UserModel.setActive(req.params.id, req.body.isActive);
+    res.json(user);
+  } catch (error) {
+    console.error('Error updating user status:', error);
+    res.status(400).json({ error: error.message || 'Failed to update status' });
+  }
+});
+
+app.post('/api/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await UserModel.resetPassword(req.params.id);
+    res.json(result);
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(400).json({ error: error.message || 'Failed to reset password' });
+  }
 });
 
 // 1. Get All Products (Includes supplier relations and computed status)
@@ -211,6 +286,43 @@ app.get('/api/purchase-orders/pending', async (req, res) => {
   }
 });
 
+// All Purchase Orders, for the "Purchase Orders" browse window (optionally filtered by PO number)
+app.get('/api/purchase-orders', async (req, res) => {
+  try {
+    const purchaseOrders = await PurchaseOrderModel.findAll(req.query.search);
+    res.json(purchaseOrders);
+  } catch (error) {
+    console.error('Error fetching purchase orders:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase orders' });
+  }
+});
+
+// A single Purchase Order, for the "Open" view/edit action
+app.get('/api/purchase-orders/:id', async (req, res) => {
+  try {
+    const purchaseOrder = await PurchaseOrderModel.findById(req.params.id);
+    if (!purchaseOrder) {
+      return res.status(404).json({ error: 'Purchase order not found' });
+    }
+    res.json(purchaseOrder);
+  } catch (error) {
+    console.error('Error fetching purchase order:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase order' });
+  }
+});
+
+// Delete a Purchase Order (blocked once a Receiving Report has been filed against it)
+app.delete('/api/purchase-orders/:id', authenticateToken, async (req, res) => {
+  try {
+    await PurchaseOrderModel.delete(req.params.id);
+    res.status(204).end();
+  } catch (error) {
+    console.error('Error deleting purchase order:', error);
+    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
+    res.status(status).json({ error: error.message || 'Failed to delete purchase order' });
+  }
+});
+
 // --- RECEIVING REPORT ROUTES ---
 
 // File a Receiving Report against a pending Purchase Order (tops up stock/cost, closes the PO)
@@ -260,6 +372,20 @@ app.get('/api/receiving-reports', async (req, res) => {
   } catch (error) {
     console.error('Error fetching receiving reports:', error);
     res.status(500).json({ error: 'Failed to fetch receiving reports' });
+  }
+});
+
+// A single Receiving Report, for the "View Receiving Report" action
+app.get('/api/receiving-reports/:id', async (req, res) => {
+  try {
+    const receivingReport = await ReceivingReportModel.findById(req.params.id);
+    if (!receivingReport) {
+      return res.status(404).json({ error: 'Receiving report not found' });
+    }
+    res.json(receivingReport);
+  } catch (error) {
+    console.error('Error fetching receiving report:', error);
+    res.status(500).json({ error: 'Failed to fetch receiving report' });
   }
 });
 
