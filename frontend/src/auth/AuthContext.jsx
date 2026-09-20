@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DEV_SUPERVISOR_PIN } from './devUsers';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const STORAGE_KEY = 'aims.auth';
@@ -71,8 +70,6 @@ export function AuthProvider({ children }) {
     setIsAdminAuthenticated(false);
   }, []);
 
-  const authorizeSupervisor = useCallback((pin) => pin === DEV_SUPERVISOR_PIN, []);
-
   const verifyAdminPassword = useCallback(
     async (password) => {
       if (!session?.token) throw new Error('Not authenticated.');
@@ -107,10 +104,9 @@ export function AuthProvider({ children }) {
       isAdminAuthenticated,
       login,
       logout,
-      authorizeSupervisor,
       verifyAdminPassword,
     };
-  }, [session, isAdminAuthenticated, login, logout, authorizeSupervisor, verifyAdminPassword]);
+  }, [session, isAdminAuthenticated, login, logout, verifyAdminPassword]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

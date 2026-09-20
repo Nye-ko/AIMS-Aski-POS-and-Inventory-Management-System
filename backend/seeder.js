@@ -32,7 +32,7 @@ async function seedData() {
     // documented dev accounts in frontend/src/auth/devUsers.js)
     const seedUsers = [
       { username: 'admin', password: 'admin123', role: 'ADMIN' },
-      { username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR' },
+      { username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR', pin: '1234' },
       { username: 'cashier', password: 'cashier123', role: 'CASHIER' },
       { username: 'accounting', password: 'accounting123', role: 'ACCOUNTING' },
       { username: 'inventory', password: 'inventory123', role: 'INVENTORY' },
@@ -42,7 +42,12 @@ async function seedData() {
     for (const u of seedUsers) {
       const hashedPassword = await bcrypt.hash(u.password, 10);
       usersByUsername[u.username] = await prisma.user.create({
-        data: { username: u.username, password: hashedPassword, role: u.role },
+        data: {
+          username: u.username,
+          password: hashedPassword,
+          role: u.role,
+          pin: u.pin ? await bcrypt.hash(u.pin, 10) : null,
+        },
       });
     }
     const cashier = usersByUsername.cashier;

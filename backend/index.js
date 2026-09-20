@@ -38,6 +38,7 @@ const lowStockAlerts = require('./services/lowStockAlerts');
 const expiryAlerts = require('./services/expiryAlerts');
 const forecastAlerts = require('./services/forecastAlerts');
 const receiptPrinter = require('./services/receiptPrinter');
+const posApproval = require('./services/posApproval');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -171,6 +172,18 @@ app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, 
   } catch (error) {
     console.error('Error updating user status:', error);
     res.status(400).json({ error: error.message || 'Failed to update status' });
+  }
+});
+
+// Set (body: { pin: "1234" }) or clear (body: { pin: null }) a supervisor's POS approval PIN.
+app.put('/api/users/:id/pin', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pin = req.body.pin === null ? null : String(req.body.pin ?? '');
+    const user = await UserModel.setPin(req.params.id, pin);
+    res.json(user);
+  } catch (error) {
+    console.error('Error updating user PIN:', error);
+    res.status(400).json({ error: error.message || 'Failed to update PIN' });
   }
 });
 
@@ -463,6 +476,24 @@ app.get('/api/purchase-returns/:id/export', authenticateToken, requireRole(...RO
   }
 });
 
+// --- POS SUPERVISOR APPROVAL ---
+
+// Exchanges a supervisor's PIN for a short-lived approval token. The token is bound to the
+// requesting cashier and action, and is presented back on checkout / X-Reading.
+app.post('/api/pos/approve', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
+  try {
+    const { pin, action, discountPercent } = req.body;
+    const result = await posApproval.requestApproval({ requester: req.user, pin, action, discountPercent });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof posApproval.ApprovalError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error('Approval error:', error);
+    res.status(500).json({ error: 'Failed to verify supervisor PIN' });
+  }
+});
+
 // --- TRANSACTIONS ROUTES ---
 
 // Create New Transaction (Checkout)
@@ -500,6 +531,9 @@ app.post('/api/transactions', authenticateToken, requireRole(...ROLES.POS), asyn
       }
     }
   } catch (error) {
+    if (error instanceof TransactionModel.CheckoutError || error instanceof posApproval.ApprovalError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Transaction error:', error);
     if (error.message === STALE_SESSION_ERROR) {
       return res.status(401).json({ error: error.message });
@@ -588,12 +622,24 @@ app.get('/api/finance/summary', authenticateToken, requireRole(...ROLES.FINANCE)
 
 // --- RECONCILIATION ROUTES ---
 
-// Get Expected Cash for Today
+// X-Reading needs a supervisor approval token (POST /api/pos/approve with action XREAD),
+// sent in the X-Approval-Token header.
+const sendApprovalOrReconError = (res, error) => {
+  if (error instanceof posApproval.ApprovalError || error instanceof ReconciliationModel.ReconciliationError) {
+    res.status(error.status).json({ error: error.message, code: error.code });
+    return true;
+  }
+  return false;
+};
+
+// Get today's X-Reading figures for the signed-in cashier
 app.get('/api/reconciliation/expected-cash', authenticateToken, requireRole(...ROLES.RECONCILIATION_WRITE), async (req, res) => {
   try {
-    const data = await ReconciliationModel.getExpectedCash();
+    await posApproval.verifyApproval(req.headers['x-approval-token'], { action: 'XREAD', cashierId: req.user.id });
+    const data = await ReconciliationModel.getExpectedCash(req.user.id);
     return res.status(200).json(data);
   } catch (error) {
+    if (sendApprovalOrReconError(res, error)) return;
     console.error('Error calculating expected cash:', error);
     return res.status(500).json({
       error: 'Failed to calculate expected cash',
@@ -603,10 +649,19 @@ app.get('/api/reconciliation/expected-cash', authenticateToken, requireRole(...R
   }
 });
 
-// Save End of Day Reconciliation
+// Save End of Day Reconciliation (one per cashier per day; all totals computed server-side)
 app.post('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCILIATION_WRITE), async (req, res) => {
   try {
-    const record = await ReconciliationModel.create({ ...req.body, cashierId: req.user.id });
+    const approval = await posApproval.verifyApproval(req.headers['x-approval-token'], {
+      action: 'XREAD',
+      cashierId: req.user.id,
+    });
+    const record = await ReconciliationModel.create({
+      denominations: req.body.denominations,
+      notes: req.body.notes,
+      cashierId: req.user.id,
+    });
+    posApproval.consumeApproval(approval);
 
     // Broadcast updated financial metrics over WebSocket
     const io = req.app.get('io');
@@ -615,6 +670,7 @@ app.post('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCIL
 
     res.status(201).json({ message: 'Reconciliation Submitted', record });
   } catch (error) {
+    if (sendApprovalOrReconError(res, error)) return;
     console.error('Error creating reconciliation:', error);
     if (error.message === STALE_SESSION_ERROR) {
       return res.status(401).json({ error: error.message });

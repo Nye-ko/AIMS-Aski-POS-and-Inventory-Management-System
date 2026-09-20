@@ -44,10 +44,12 @@ model User {
   password         String
   role             Role              @default(CASHIER)
   isActive         Boolean           @default(true)
+  pin              String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
-  transactions     Transaction[]
+  transactions         Transaction[] @relation("TransactionCashier")
+  approvedTransactions Transaction[] @relation("TransactionApprover")
   reconciliations  Reconciliation[]
   purchaseOrders   PurchaseOrder[]
   receivingReports ReceivingReport[]
@@ -107,7 +109,10 @@ model Transaction {
   paymentMethod        PaymentMethod     @default(CASH)
 
   cashierId            Int
-  cashier              User              @relation(fields: [cashierId], references: [id])
+  cashier              User              @relation("TransactionCashier", fields: [cashierId], references: [id])
+
+  approvedById         Int?
+  approvedBy           User?             @relation("TransactionApprover", fields: [approvedById], references: [id])
 
   createdAt            DateTime          @default(now())
 
@@ -164,7 +169,10 @@ model Reconciliation {
 
   status             ReconciliationStatus @default(COMPLETED)
   notes              String?              @db.Text
+  businessDate       String?
   createdAt          DateTime             @default(now())
+
+  @@index([cashierId, businessDate])
 }
 
 model PurchaseOrder {
