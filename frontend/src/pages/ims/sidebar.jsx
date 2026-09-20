@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -8,15 +9,134 @@ import {
   Settings,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Users,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
+function AdminAuthModal({ onClose, onVerified }) {
+  const { verifyAdminPassword } = useAuth();
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const triggerShake = () => {
+    setShake(true);
+    setTimeout(() => setShake(false), 400);
+  };
+
+  const handleVerify = async () => {
+    if (!password || isVerifying) return;
+    setIsVerifying(true);
+    setError(null);
+    try {
+      await verifyAdminPassword(password);
+      onVerified();
+    } catch (err) {
+      setError(err.message || 'Invalid admin password. Access denied.');
+      triggerShake();
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <style>{`
+        @keyframes adminAuthShake {
+          10%, 90% { transform: translateX(-1px); }
+          20%, 80% { transform: translateX(2px); }
+          30%, 50%, 70% { transform: translateX(-4px); }
+          40%, 60% { transform: translateX(4px); }
+        }
+        .admin-auth-shake { animation: adminAuthShake 0.4s ease-in-out; }
+      `}</style>
+      <div
+        className={`bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden ${
+          shake ? 'admin-auth-shake' : ''
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3 p-6 pb-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-[#0B132B] flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Admin Verification Required</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Please enter your administrator password to access User Account Management.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 pb-2">
+          <label className="block text-[11px] font-bold text-slate-500 mb-1.5">Password</label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              autoFocus
+              placeholder="Enter your admin password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
+              className="w-full rounded-xl bg-slate-50 border border-slate-200 pl-3 pr-10 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition-all"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {error && (
+            <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 pt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-full transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleVerify}
+            disabled={!password || isVerifying}
+            className="flex-1 py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white text-xs font-bold rounded-full transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+          >
+            {isVerifying ? 'Verifying…' : 'Verify & Access'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export default function Sidebar() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showAdminAuthModal, setShowAdminAuthModal] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, isAdminAuthenticated } = useAuth();
 
   const handleLogout = () => {
     logout();
@@ -28,7 +148,18 @@ export default function Sidebar() {
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList' },
     { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand' },
     { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance' },
+    ...(user?.role === 'ADMIN'
+      ? [{ id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement' }]
+      : []),
   ];
+
+  const handleNavClick = (item) => {
+    if (item.id === 'users' && !isAdminAuthenticated) {
+      setShowAdminAuthModal(true);
+      return;
+    }
+    navigate(item.path);
+  };
 
   return (
     <aside 
@@ -69,7 +200,7 @@ export default function Sidebar() {
           return (
             <button
               key={item.id}
-              onClick={() => navigate(item.path)} // Use React Router navigate
+              onClick={() => handleNavClick(item)}
               title={isSidebarCollapsed ? item.label : undefined}
               className={`w-full flex items-center gap-3.5 px-3.5 py-3 rounded-2xl text-sm font-medium transition-all duration-300 relative ${
                 isActive
@@ -110,6 +241,16 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      {showAdminAuthModal && (
+        <AdminAuthModal
+          onClose={() => setShowAdminAuthModal(false)}
+          onVerified={() => {
+            setShowAdminAuthModal(false);
+            navigate('/pages/ims/UserManagement');
+          }}
+        />
+      )}
     </aside>
   );
 }

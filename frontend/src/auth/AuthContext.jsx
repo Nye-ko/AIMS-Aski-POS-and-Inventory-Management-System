@@ -27,6 +27,10 @@ function writeStoredUser(user) {
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(readStoredUser); // { token, id, username, role }
+  // Gates sensitive admin screens (User Management) behind a fresh password
+  // re-check, on top of the session JWT. Deliberately in-memory only — it
+  // resets on page reload and is cleared explicitly on login/logout below.
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
   useEffect(() => {
     writeStoredUser(session);
@@ -54,12 +58,40 @@ export function AuthProvider({ children }) {
 
     const authed = { token: body.token, ...body.user };
     setSession(authed);
+    setIsAdminAuthenticated(false);
     return authed;
   }, []);
 
-  const logout = useCallback(() => setSession(null), []);
+  const logout = useCallback(() => {
+    setSession(null);
+    setIsAdminAuthenticated(false);
+  }, []);
 
   const authorizeSupervisor = useCallback((pin) => pin === DEV_SUPERVISOR_PIN, []);
+
+  const verifyAdminPassword = useCallback(
+    async (password) => {
+      if (!session?.token) throw new Error('Not authenticated.');
+
+      let res;
+      try {
+        res = await fetch(`${API_BASE_URL}/auth/verify-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+          body: JSON.stringify({ password }),
+        });
+      } catch {
+        throw new Error('Could not reach the server. Check your connection and try again.');
+      }
+
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Invalid admin password. Access denied.');
+
+      setIsAdminAuthenticated(true);
+      return true;
+    },
+    [session]
+  );
 
   const value = useMemo(() => {
     const user = session ? { id: session.id, username: session.username, role: session.role } : null;
@@ -68,11 +100,13 @@ export function AuthProvider({ children }) {
       token: session?.token || null,
       role: user?.role || null,
       isAuthenticated: !!session,
+      isAdminAuthenticated,
       login,
       logout,
       authorizeSupervisor,
+      verifyAdminPassword,
     };
-  }, [session, login, logout, authorizeSupervisor]);
+  }, [session, isAdminAuthenticated, login, logout, authorizeSupervisor, verifyAdminPassword]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

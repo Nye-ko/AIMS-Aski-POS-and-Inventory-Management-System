@@ -36,5 +36,9 @@
   "devDependencies": {
     "nodemon": "^3.1.14",
     "prisma": "^7.9.1"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.9.1": true,
+    "prisma@7.9.1": true
   }
 }

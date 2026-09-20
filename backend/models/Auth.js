@@ -25,9 +25,28 @@ const AuthModel = {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) throw new Error('Invalid username or password.');
 
+    if (!user.isActive) throw new Error('This account has been deactivated. Contact an administrator.');
+
     const payload = { id: user.id, username: user.username, role: user.role };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     return { token, user: payload };
+  },
+
+  // Re-checks the caller's own password against their stored hash. Used to gate
+  // sensitive admin-only screens (e.g. User Management) behind a fresh password
+  // prompt even though their session JWT is already valid.
+  verifyPassword: async (userId, password) => {
+    if (!password) throw new Error('Password is required.');
+
+    const user = await prisma.user.findUnique({ where: { id: parseInt(userId, 10) } });
+    if (!user) throw new Error('Invalid admin password. Access denied.');
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new Error('Invalid admin password. Access denied.');
+
+    if (!user.isActive) throw new Error('This account has been deactivated. Contact an administrator.');
+
+    return true;
   },
 };
 

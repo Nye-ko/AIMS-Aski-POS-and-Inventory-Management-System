@@ -1,24 +1,64 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Package, 
-  Plus, 
-  FileSpreadsheet, 
-  RotateCcw, 
-  Truck, 
-  Search, 
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Package,
+  Plus,
+  FileSpreadsheet,
+  RotateCcw,
+  Truck,
+  Search,
   ChevronDown,
   X,
   BarChart3,
   PackagePlus,
   Barcode,
-  Loader2
+  Loader2,
+  Check,
+  LayoutGrid,
+  Sprout, Leaf, Wheat, SprayCan, Wrench,
+  Pill, PaintBucket, ShoppingBag, Milk, Palette, Coffee,
+  Soup, Cylinder
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
-import PurchaseOrderModal from './PurchaseOrderModal';
+import PurchaseOrdersList from './PurchaseOrdersList';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
 
 const API_BASE_URL = 'http://localhost:5000/api';
+
+// Same category -> icon mapping as cashierPOS.jsx, so a product shows the
+// identical glyph whether viewed at the register or in inventory.
+const CATEGORY_ICONS = {
+  seeds: Sprout,
+  fertilizers: Leaf,
+  feeds: Wheat,
+  pesticides: SprayCan,
+  tools: Wrench,
+  hardware: Wrench,
+  medicine: Pill,
+  pharmacy: Pill,
+  paint: PaintBucket,
+  paints: Palette,
+  grocery: ShoppingBag,
+  dairy: Milk,
+  bakery: Wheat,
+  snacks: ShoppingBag,
+  beverages: Coffee,
+  household: SprayCan,
+  pantry: Soup,
+  'canned goods': Cylinder,
+};
+
+const getCategoryIcon = (category) => {
+  if (!category) return Package;
+  return CATEGORY_ICONS[category.toLowerCase()] || Package;
+};
+
+function CategoryIcon({ category, className }) {
+  const Icon = getCategoryIcon(category);
+  // eslint-disable-next-line react-hooks/static-components
+  return <Icon className={className} />;
+}
 
 // Helper function to handle property name mismatches from the backend
 const getStockValue = (product) => {
@@ -165,7 +205,7 @@ export default function InventorySystem() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center font-sans">
+      <div className="flex-1 flex items-center justify-center">
         <div className="flex items-center gap-3 text-slate-600 font-bold text-sm">
           <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           <span>Connecting to database...</span>
@@ -176,13 +216,13 @@ export default function InventorySystem() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 max-w-md text-center">
+      <div className="flex-1 flex items-center justify-center">
+        <div className="bg-gradient-to-br from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 p-6 rounded-3xl shadow-xl shadow-blue-500/10 max-w-md text-center">
           <p className="text-rose-600 font-bold text-sm mb-2">Database Connection Error</p>
           <p className="text-slate-500 text-xs mb-4">{error}</p>
-          <button 
-            onClick={fetchInitialData} 
-            className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-blue-700 transition"
+          <button
+            onClick={fetchInitialData}
+            className="px-4 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs rounded-full shadow-md hover:shadow-lg hover:shadow-blue-500/30 transition-all cursor-pointer"
           >
             Retry Connection
           </button>
@@ -192,22 +232,23 @@ export default function InventorySystem() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6 font-sans text-slate-800">
-      <header className="flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm mb-6 border border-slate-200">
+    <>
+      {/* ===== HEADER ====== */}
+      <header className="relative z-30 flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-8 py-4 shadow-xl shadow-blue-500/10">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
+          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
             <Package className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[10px] font-bold tracking-wider text-blue-600 uppercase">POS System</p>
-            <h1 className="text-xl font-black text-slate-900 tracking-tight">INVENTORY MANAGEMENT</h1>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">INVENTORY MANAGEMENT</h2>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm p-1.5 rounded-2xl border border-white/70">
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-lg transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
               activeTab === 'inventory'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -219,7 +260,7 @@ export default function InventorySystem() {
 
           <button
             onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-lg transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
               activeTab === 'reports'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -231,25 +272,43 @@ export default function InventorySystem() {
         </div>
       </header>
 
-      {activeTab === 'inventory' && (
-        <InventoryPage
-          products={products}
-          setProducts={setProducts}
-          suppliers={suppliers}
-          exportToExcel={exportToExcel}
-          onDataChanged={fetchInitialData}
-        />
-      )}
+      <div className="mt-6">
+        {activeTab === 'inventory' && (
+          <InventoryPage
+            products={products}
+            setProducts={setProducts}
+            suppliers={suppliers}
+            exportToExcel={exportToExcel}
+            onDataChanged={fetchInitialData}
+          />
+        )}
 
-      {activeTab === 'reports' && (
-        <ReportsPage 
-          products={products} 
-          setProducts={setProducts} 
-          suppliers={suppliers} 
-          exportToExcel={exportToExcel}
-        />
-      )}
-    </div>
+        {activeTab === 'reports' && (
+          <ReportsPage
+            products={products}
+            setProducts={setProducts}
+            suppliers={suppliers}
+            exportToExcel={exportToExcel}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+// Uniform, neutral outline-style button used for the secondary toolbar
+// actions — a colored icon carries the meaning while the button chrome
+// stays consistent, so the row reads as one cohesive group instead of a
+// mismatched set of pastel pills.
+function ToolbarButton({ icon: Icon, iconColor, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+    >
+      <Icon className={`w-4 h-4 ${iconColor}`} />
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -263,7 +322,40 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
   const [isReceivingReportOpen, setIsReceivingReportOpen] = useState(false);
   const [isPurchaseReturnOpen, setIsPurchaseReturnOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const categoryMenuRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Close the category dropdown when clicking outside of it
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (categoryMenuRef.current && !categoryMenuRef.current.contains(e.target)) {
+        setCategoryMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Supplier / category dropdowns inside the "Add Product" form
+  const [productSupplierMenuOpen, setProductSupplierMenuOpen] = useState(false);
+  const productSupplierMenuRef = useRef(null);
+  const [productCategoryMenuOpen, setProductCategoryMenuOpen] = useState(false);
+  const productCategoryMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (productSupplierMenuRef.current && !productSupplierMenuRef.current.contains(e.target)) {
+        setProductSupplierMenuOpen(false);
+      }
+      if (productCategoryMenuRef.current && !productCategoryMenuRef.current.contains(e.target)) {
+        setProductCategoryMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const [formData, setFormData] = useState({
     barcode: '',
@@ -293,6 +385,10 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleClearForm = () => {
+    setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
   };
 
   const handleAddProduct = async (e) => {
@@ -388,11 +484,19 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name?.toLowerCase().includes(search.toLowerCase()) || 
-    p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
-    p.supplierName?.toLowerCase().includes(search.toLowerCase())
+  const categories = useMemo(
+    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort(),
+    [products]
   );
+
+  const filteredProducts = products.filter(p => {
+    const matchesSearch =
+      p.name?.toLowerCase().includes(search.toLowerCase()) ||
+      p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
+      p.supplierName?.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   const handleExportInventorySheet = () => {
     const data = filteredProducts.map(p => {
@@ -415,148 +519,280 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search barcode, product or supplier..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
-          <button
-            onClick={handleExportInventorySheet}
-            className="flex items-center gap-2 px-3.5 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs rounded-xl hover:bg-emerald-100 transition shadow-sm cursor-pointer"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Export Inventory Sheet</span>
-          </button>
-
-          <button
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5 space-y-4">
+        {/* Row 1: utility actions — uniform neutral toolbar buttons, primary action last */}
+        <div className="relative z-10 flex flex-wrap items-center gap-2">
+          <ToolbarButton icon={FileSpreadsheet} iconColor="text-emerald-600" label="Export Inventory Sheet" onClick={handleExportInventorySheet} />
+          <ToolbarButton
+            icon={PackagePlus}
+            iconColor="text-indigo-600"
+            label="Add Stock"
             onClick={() => {
               setIsAddStockOpen(true);
               setIsFormOpen(false);
               resetStockForm();
             }}
-            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl hover:bg-indigo-100 transition shadow-sm cursor-pointer"
-          >
-            <PackagePlus className="w-4 h-4 text-indigo-600" />
-            <span>Add Stock</span>
-          </button>
-
-          <button
-            onClick={() => setIsPurchaseOrderOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 text-amber-700 border border-amber-200 font-bold text-xs rounded-xl hover:bg-amber-100 transition shadow-sm cursor-pointer"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-amber-600" />
-            <span>Create Purchase Order</span>
-          </button>
-
-          <button
-            onClick={() => setIsReceivingReportOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-teal-50 text-teal-700 border border-teal-200 font-bold text-xs rounded-xl hover:bg-teal-100 transition shadow-sm cursor-pointer"
-          >
-            <Truck className="w-4 h-4 text-teal-600" />
-            <span>Create Receiving Report</span>
-          </button>
-
-          <button
-            onClick={() => setIsPurchaseReturnOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl hover:bg-rose-100 transition shadow-sm cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4 text-rose-600" />
-            <span>Create Purchase Return</span>
-          </button>
+          />
+          <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => setIsPurchaseOrderOpen(true)} />
+          <ToolbarButton icon={Truck} iconColor="text-teal-600" label="Create Receiving Report" onClick={() => setIsReceivingReportOpen(true)} />
+          <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
 
           <button
             onClick={() => {
               setIsFormOpen(!isFormOpen);
               setIsAddStockOpen(false);
             }}
-            className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 transition shadow-sm cursor-pointer"
+            className={`ml-auto flex items-center justify-center gap-2 px-4 py-2 font-bold text-xs rounded-full transition-all cursor-pointer ${
+              isFormOpen
+                ? 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+                : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
+            }`}
           >
             {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
           </button>
         </div>
+
+        <div className="relative z-10 border-t border-slate-100" />
+
+        {/* Row 2: search + category filter — z-20 so its dropdown (which
+            visually overflows into the card below) always wins the stacking
+            tie against the Product List card's own z-10 header/table rows */}
+        <div className="relative z-20 flex flex-col sm:flex-row gap-2">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="w-4 h-4 text-blue-500 absolute left-4 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search barcode, product or supplier..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-white border border-slate-200/80 shadow-sm rounded-full pl-9 pr-4 py-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+            />
+          </div>
+
+          {/* Custom dropdown with category icons — matches cashierPOS.jsx's category filter */}
+          <div className="relative" ref={categoryMenuRef}>
+            <button
+              type="button"
+              onClick={() => setCategoryMenuOpen((o) => !o)}
+              className="flex items-center gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-600 pl-3 pr-3 py-2.5 rounded-full text-xs font-semibold hover:border-blue-300 transition-colors cursor-pointer"
+            >
+              {selectedCategory === 'All' ? (
+                <LayoutGrid className="w-3.5 h-3.5 text-blue-500" />
+              ) : (
+                <CategoryIcon category={selectedCategory} className="w-3.5 h-3.5 text-blue-500" />
+              )}
+              {selectedCategory === 'All' ? 'All Categories' : selectedCategory}
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${categoryMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {categoryMenuOpen && (
+              <div className="absolute top-full left-0 mt-2 min-w-[200px] w-max max-w-xs bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1.5 max-h-64 overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedCategory('All'); setCategoryMenuOpen(false); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${selectedCategory === 'All' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span className="flex-1 text-left">All Categories</span>
+                  {selectedCategory === 'All' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                {categories.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-slate-400">No categories yet</p>
+                ) : (
+                  categories.map((cat) => {
+                    const active = selectedCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => { setSelectedCategory(cat); setCategoryMenuOpen(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <CategoryIcon category={cat} className="w-3.5 h-3.5" />
+                        <span className="flex-1 text-left">{cat}</span>
+                        {active && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ADD NEW PRODUCT FORM */}
       {isFormOpen && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-md animate-fadeIn">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide mb-4">Add New Product</h2>
-          <form onSubmit={handleAddProduct} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Barcode</label>
-              <input type="text" name="barcode" value={formData.barcode} onChange={handleInputChange} placeholder="Auto-generated if blank" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
+        <div className="relative overflow-hidden bg-[#0B132B] border border-slate-800 p-6 rounded-2xl shadow-2xl shadow-slate-950/40 animate-fadeIn">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+          <form onSubmit={handleAddProduct} className="relative z-10">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Product Details</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleClearForm}
+                  className="px-4 py-2 bg-slate-800/80 border border-slate-700 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Clear
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 font-semibold text-xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isSubmitting ? 'Saving...' : 'Add Product'}
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Product Name</label>
-              <input type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" required />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Barcode</label>
+                <input type="text" name="barcode" value={formData.barcode} onChange={handleInputChange} placeholder="Auto-generated if blank" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Supplier</label>
-              <select name="supplierId" value={formData.supplierId} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" required>
-                <option value="">Select Supplier</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Product Name</label>
+                <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="e.g., Whole Milk 1L" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" required />
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Category</label>
-              <input type="text" name="category" value={formData.category} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
-            </div>
+              {/* Supplier — custom dark dropdown */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Supplier</label>
+                <div className="relative" ref={productSupplierMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setProductSupplierMenuOpen((o) => !o)}
+                    className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-4 py-2.5 text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
+                  >
+                    <span className={`truncate ${formData.supplierId ? 'text-slate-200' : 'text-slate-500'}`}>
+                      {suppliers.find((s) => String(s.id) === String(formData.supplierId))?.name || 'Select Supplier'}
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${productSupplierMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Initial Stock Quantity</label>
-              <input type="number" name="currentStock" value={formData.currentStock} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
-            </div>
+                  {productSupplierMenuOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-full min-w-[180px] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-30 py-1.5 max-h-52 overflow-y-auto">
+                      {suppliers.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-slate-500">No suppliers yet</p>
+                      ) : (
+                        suppliers.map((s) => {
+                          const active = String(formData.supplierId) === String(s.id);
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({ ...prev, supplierId: String(s.id) }));
+                                setProductSupplierMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? 'bg-blue-500/10 text-blue-400' : 'text-slate-300 hover:bg-slate-800'}`}
+                            >
+                              <span className="flex-1 text-left truncate">{s.name}</span>
+                              {active && <Check className="w-3.5 h-3.5" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Min Stock (alert threshold)</label>
-              <input type="number" name="minStock" value={formData.minStock} onChange={handleInputChange} placeholder="Defaults to 10" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
-            </div>
+              {/* Category — custom dark dropdown with icons, plus a free-text fallback for new categories */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Category</label>
+                <div className="relative" ref={productCategoryMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setProductCategoryMenuOpen((o) => !o)}
+                    className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-4 py-2.5 text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
+                  >
+                    <span className={`flex items-center gap-2 truncate ${formData.category ? 'text-slate-200' : 'text-slate-500'}`}>
+                      {formData.category && <CategoryIcon category={formData.category} className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                      {formData.category || 'Select Category'}
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${productCategoryMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Unit Cost (₱)</label>
-              <input type="number" name="unitCost" value={formData.unitCost} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
-            </div>
+                  {productCategoryMenuOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-full min-w-[200px] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-30 py-1.5 max-h-52 overflow-y-auto">
+                      {categories.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-slate-500">No categories yet</p>
+                      ) : (
+                        categories.map((cat) => {
+                          const active = formData.category === cat;
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({ ...prev, category: cat }));
+                                setProductCategoryMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? 'bg-blue-500/10 text-blue-400' : 'text-slate-300 hover:bg-slate-800'}`}
+                            >
+                              <CategoryIcon category={cat} className="w-3.5 h-3.5" />
+                              <span className="flex-1 text-left truncate">{cat}</span>
+                              {active && <Check className="w-3.5 h-3.5" />}
+                            </button>
+                          );
+                        })
+                      )}
+                      <div className="border-t border-slate-800 mt-1 pt-1.5 px-1.5">
+                        <input
+                          type="text"
+                          name="category"
+                          value={formData.category}
+                          onChange={handleInputChange}
+                          placeholder="Or type a new category..."
+                          className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-lg px-2.5 py-1.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Selling Price (₱)</label>
-              <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs" />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Initial Stock Quantity</label>
+                <input type="number" name="currentStock" value={formData.currentStock} onChange={handleInputChange} placeholder="e.g., 50" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+              </div>
 
-            <div className="flex items-end">
-              <button 
-                type="submit" 
-                disabled={isSubmitting}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition shadow-md disabled:opacity-50"
-              >
-                {isSubmitting ? 'Saving...' : 'Save Product'}
-              </button>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Min Stock (Alert Threshold)</label>
+                <input type="number" name="minStock" value={formData.minStock} onChange={handleInputChange} placeholder="Defaults to 10" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Unit Cost (₱)</label>
+                <input type="number" name="unitCost" value={formData.unitCost} onChange={handleInputChange} placeholder="0.00" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Selling Price (₱)</label>
+                <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="0.00" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+              </div>
             </div>
           </form>
         </div>
       )}
 
-      {/* MODAL: ADD STOCK */}
-      {isAddStockOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-md w-full border border-slate-100 animate-fadeIn">
+      {/* MODAL: ADD STOCK — rendered via portal so the backdrop covers the sidebar too */}
+      {isAddStockOpen && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
+          <div className="font-sans bg-white rounded-2xl p-6 shadow-2xl shadow-slate-900/10 max-w-md w-full border border-slate-200/80 animate-modal-card">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                <PackagePlus className="w-4 h-4 text-indigo-600" />
-                Add Stock Quantity
-              </h3>
-              <button onClick={() => setIsAddStockOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <PackagePlus className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Add Stock Quantity</h3>
+              </div>
+              <button onClick={() => setIsAddStockOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -572,7 +808,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                       setStockSearchQuery(e.target.value);
                       if (selectedProduct) setSelectedProduct(null);
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
                   <Barcode className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -596,7 +832,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                       <div
                         key={p.id}
                         onClick={() => handleSelectSuggestion(p)}
-                        className="p-2.5 hover:bg-indigo-50/50 cursor-pointer transition flex justify-between items-center text-xs"
+                        className="p-2.5 hover:bg-blue-50/50 cursor-pointer transition flex justify-between items-center text-xs"
                       >
                         <div>
                           <p className="font-bold text-slate-800">{p.name}</p>
@@ -612,8 +848,8 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               </div>
 
               {selectedProduct && (
-                <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 text-xs">
-                  <p className="font-bold text-indigo-900">{selectedProduct.name}</p>
+                <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 text-xs">
+                  <p className="font-bold text-blue-900">{selectedProduct.name}</p>
                   <p className="text-slate-500 text-[11px]">Current Stock: <span className="font-bold text-slate-700">{getStockValue(selectedProduct)}</span></p>
                 </div>
               )}
@@ -650,82 +886,113 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                 <button
                   type="button"
                   onClick={() => setIsAddStockOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition"
+                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+                  className="px-4 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 hover:shadow-lg hover:shadow-blue-500/30 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmitting ? 'Updating...' : 'Update Stock'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* PRODUCT LIST TABLE */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-          <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Live Inventory Table</h2>
-          <span className="text-xs text-slate-500 font-semibold">{filteredProducts.length} items</span>
+      <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
+        <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+              <Package className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Product List</h2>
+          </div>
+          <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">{filteredProducts.length} items</span>
         </div>
-        <div className="overflow-x-auto">
+
+        <div className="relative z-10 overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-              <tr>
-                <th className="p-3">Barcode</th>
-                <th className="p-3">Product Name</th>
-                <th className="p-3">Supplier</th>
-                <th className="p-3">Category</th>
-                <th className="p-3 text-center">Stock</th>
-                <th className="p-3 text-center">Min Stock</th>
-                <th className="p-3 text-center">Unit Cost</th>
-                <th className="p-3 text-center">Price</th>
-                <th className="p-3 text-center">Expiry</th>
-                <th className="p-3 text-right">Status</th>
+            <thead>
+              <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[11px] tracking-wider font-extrabold">
+                <th className="px-4 py-3.5">Product</th>
+                <th className="px-4 py-3.5">Supplier</th>
+                <th className="px-4 py-3.5">Category</th>
+                <th className="px-4 py-3.5 text-center">Stock</th>
+                <th className="px-4 py-3.5 text-center">Min Stock</th>
+                <th className="px-4 py-3.5 text-center">Unit Cost</th>
+                <th className="px-4 py-3.5 text-center">Price</th>
+                <th className="px-4 py-3.5 text-center">Expiry</th>
+                <th className="px-4 py-3.5 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredProducts.map(p => {
+              {filteredProducts.length > 0 ? filteredProducts.map((p, idx) => {
                 const stockVal = getStockValue(p);
                 const statusText = p.status || (stockVal > 10 ? 'In Stock' : stockVal > 0 ? 'Low Stock' : 'Out of Stock');
                 const isExpired = statusText === 'Expired';
+                const statusBadge = isExpired
+                  ? 'bg-purple-500/10 text-purple-700 border border-purple-300/40'
+                  : statusText === 'Low Stock'
+                  ? 'bg-amber-500/10 text-amber-700 border border-amber-300/40'
+                  : stockVal > 0
+                  ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-300/40'
+                  : 'bg-rose-500/10 text-rose-700 border border-rose-300/40';
 
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50 transition">
-                    <td className="p-3 font-mono text-slate-500">{p.barcode}</td>
-                    <td className="p-3 font-semibold text-slate-900">{p.name}</td>
-                    <td className="p-3 text-slate-500">{p.supplierName || 'N/A'}</td>
-                    <td className="p-3">{p.category}</td>
-                    <td className="p-3 text-center font-bold text-blue-600">{stockVal}</td>
-                    <td className="p-3 text-center">
+                  <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
+                          <CategoryIcon category={p.category} className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-900 truncate">{p.name}</p>
+                          <p className="text-[10px] font-mono text-slate-400 truncate">{p.barcode}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-500">{p.supplierName || 'N/A'}</td>
+                    <td className="px-4 py-3.5">{p.category}</td>
+                    <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
+                    <td className="px-4 py-3.5 text-center">
                       <MinStockEditor product={p} onUpdated={(updated) => {
                         setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
                       }} />
                     </td>
-                    <td className="p-3 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
-                    <td className="p-3 text-center">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
-                    <td className="p-3 text-center">
+                    <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
+                    <td className="px-4 py-3.5 text-center font-bold text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
+                    <td className="px-4 py-3.5 text-center">
                       <ExpiryEditor product={p} onUpdated={(updated) => {
                         setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
                       }} />
                     </td>
-                    <td className={`p-3 text-right font-bold ${isExpired ? 'text-rose-600' : stockVal > 10 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                      {statusText}
+                    <td className="px-4 py-3.5 text-right">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                        {statusText}
+                      </span>
                     </td>
                   </tr>
                 );
-              })}
+              }) : (
+                <tr>
+                  <td colSpan="9" className="px-4 py-10 text-center text-slate-400 font-semibold">
+                    No products found.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      <PurchaseOrderModal
+      <PurchaseOrdersList
         isOpen={isPurchaseOrderOpen}
         onClose={() => setIsPurchaseOrderOpen(false)}
         products={products}
@@ -885,27 +1152,24 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="w-full md:w-80">
-            <label className="block text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">
+      <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="w-full md:w-96">
+            <label className="block text-xs font-bold text-blue-600 uppercase tracking-wide mb-1.5">
               Select Supplier for Report
             </label>
             <div className="relative">
               <select
                 value={selectedSupplierId}
-                onChange={(e) => {
-                  setSelectedSupplierId(e.target.value);
-                  setSelectedProductIds([]);
-                }}
-                className="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none appearance-none"
+                onChange={(e) => setSelectedSupplierId(e.target.value)}
+                className="w-full bg-white border border-slate-200/80 shadow-sm rounded-2xl pl-4 pr-9 py-3 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-400 transition-all appearance-none"
               >
                 <option value="">-- Choose Supplier --</option>
                 {suppliers.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+              <ChevronDown className="w-4 h-4 text-blue-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
 
@@ -913,53 +1177,65 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
             <button
               onClick={handleExportReceivingReport}
               disabled={!selectedSupplierId}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs rounded-xl hover:bg-blue-100 transition disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs rounded-full shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40 transition-all disabled:opacity-50 disabled:shadow-none cursor-pointer"
             >
-              <Truck className="w-4 h-4 text-blue-600" />
+              <Truck className="w-4 h-4" />
               <span>Export Receiving Report</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-          <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">
-            {selectedSupplierId ? 'Products supplied by selected supplier' : 'Select a supplier above to view list'}
-          </h2>
-          <span className="text-xs text-slate-500 font-semibold">{supplierProducts.length} items found</span>
+      <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
+        <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+              <BarChart3 className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+              {selectedSupplierId ? 'Products supplied by selected supplier' : 'Select a supplier above to view list'}
+            </h2>
+          </div>
+          <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">{supplierProducts.length} items found</span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="relative z-10 overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-              <tr>
-                <th className="p-3">Product Name</th>
-                <th className="p-3">Category</th>
-                <th className="p-3 text-center">Stock</th>
-                <th className="p-3 text-center">Unit Cost</th>
-                <th className="p-3 text-center">Total Value</th>
-                <th className="p-3 text-center">Batch Date</th>
+            <thead>
+              <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[11px] tracking-wider font-extrabold">
+                <th className="px-4 py-3.5">Product Name</th>
+                <th className="px-4 py-3.5">Category</th>
+                <th className="px-4 py-3.5 text-center">Stock</th>
+                <th className="px-4 py-3.5 text-center">Unit Cost</th>
+                <th className="px-4 py-3.5 text-center">Total Value</th>
+                <th className="px-4 py-3.5 text-center">Batch Date</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+            <tbody className="divide-y divide-slate-200/40 font-medium text-slate-700">
               {supplierProducts.length > 0 ? (
-                supplierProducts.map(p => {
+                supplierProducts.map((p, idx) => {
                   const stockVal = getStockValue(p);
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50 transition">
-                      <td className="p-3 font-semibold text-slate-900">{p.name}</td>
-                      <td className="p-3">{p.category}</td>
-                      <td className="p-3 text-center font-bold">{stockVal}</td>
-                      <td className="p-3 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
-                      <td className="p-3 text-center font-semibold">₱{(stockVal * Number(p.unitCost || 0)).toFixed(2)}</td>
-                      <td className="p-3 text-center">{p.batchDate}</td>
+                    <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
+                            <CategoryIcon category={p.category} className="w-4 h-4" />
+                          </div>
+                          <span className="font-semibold text-slate-900">{p.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">{p.category}</td>
+                      <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
+                      <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-center font-semibold">₱{(stockVal * Number(p.unitCost || 0)).toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-center">{p.batchDate}</td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan="6" className="p-6 text-center text-slate-400 font-semibold">
+                  <td colSpan="6" className="px-4 py-10 text-center text-slate-400 font-semibold">
                     {selectedSupplierId ? 'No products found for this supplier.' : 'Please select a supplier from the dropdown.'}
                   </td>
                 </tr>

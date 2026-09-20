@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { X, RotateCcw, Loader2, Inbox, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
@@ -135,21 +136,25 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-100 max-h-[90vh] flex flex-col">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
+      <div className="font-sans bg-white rounded-2xl shadow-2xl shadow-slate-900/10 max-w-4xl w-full border border-slate-200/80 max-h-[90vh] flex flex-col animate-modal-card">
         <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {view === 'detail' && (
-              <button onClick={() => setView('list')} className="text-slate-400 hover:text-slate-600 mr-1">
+              <button onClick={() => setView('list')} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
             )}
-            <RotateCcw className="w-4 h-4 text-rose-600" />
-            {view === 'list' ? 'Create Purchase Return — Receiving Reports' : `Purchase Return — ${selectedRr?.rrNumber}`}
-          </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+              <RotateCcw className="w-4 h-4" />
+            </div>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+              {view === 'list' ? 'Create Purchase Return — Receiving Reports' : `Purchase Return — ${selectedRr?.rrNumber}`}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -297,7 +302,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
             <button
               type="button"
               onClick={() => setView('list')}
-              className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition"
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-50 transition"
             >
               Back
             </button>
@@ -305,7 +310,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
               type="button"
               onClick={handleCreateReturn}
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-tr from-rose-600 to-pink-600 hover:shadow-lg hover:shadow-rose-500/30 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {isSubmitting ? 'Saving & Generating...' : 'Create Return & Download'}
@@ -313,6 +318,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

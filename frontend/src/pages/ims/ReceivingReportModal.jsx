@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { X, ClipboardCheck, Loader2, Inbox, ChevronLeft } from 'lucide-react';
@@ -31,7 +32,7 @@ const buildLineItems = (po) =>
     unitCost: Number(it.unitCost),
   }));
 
-export default function ReceivingReportModal({ isOpen, onClose, onSaved }) {
+export default function ReceivingReportModal({ isOpen, onClose, onSaved, initialPurchaseOrder = null }) {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const [view, setView] = useState('list'); // 'list' | 'detail'
@@ -61,18 +62,6 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved }) {
     }
   };
 
-  // Reset to the picker list each time the modal is (re)opened
-  const prevIsOpen = React.useRef(isOpen);
-  useEffect(() => {
-    if (isOpen && !prevIsOpen.current) {
-      setView('list');
-      setSelectedPo(null);
-      setFormError(null);
-      loadPendingOrders();
-    }
-    prevIsOpen.current = isOpen;
-  }, [isOpen]);
-
   const openPurchaseOrder = (po) => {
     setSelectedPo(po);
     setItems(buildLineItems(po));
@@ -82,6 +71,30 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved }) {
     setFormError(null);
     setView('detail');
   };
+
+  // Jump straight to the given PO if one was passed in, otherwise reset to
+  // the pending-orders picker list — each time the modal is (re)opened.
+  const prevIsOpen = React.useRef(isOpen);
+  useEffect(() => {
+    if (isOpen && !prevIsOpen.current) {
+      if (initialPurchaseOrder) {
+        setSelectedPo(initialPurchaseOrder);
+        setItems(buildLineItems(initialPurchaseOrder));
+        setDeliveryNote('');
+        setInvoiceNo('');
+        setRemarks('');
+        setFormError(null);
+        setView('detail');
+      } else {
+        setView('list');
+        setSelectedPo(null);
+        setFormError(null);
+        loadPendingOrders();
+      }
+    }
+    prevIsOpen.current = isOpen;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const updateItem = (productId, patch) => {
     setItems((prev) => prev.map((it) => (it.productId !== productId ? it : { ...it, ...patch })));
@@ -136,21 +149,25 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved }) {
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-100 max-h-[90vh] flex flex-col">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
+      <div className="font-sans bg-white rounded-2xl shadow-2xl shadow-slate-900/10 max-w-4xl w-full border border-slate-200/80 max-h-[90vh] flex flex-col animate-modal-card">
         <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-            {view === 'detail' && (
-              <button onClick={() => setView('list')} className="text-slate-400 hover:text-slate-600 mr-1">
+          <div className="flex items-center gap-3">
+            {view === 'detail' && !initialPurchaseOrder && (
+              <button onClick={() => setView('list')} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
             )}
-            <ClipboardCheck className="w-4 h-4 text-emerald-600" />
-            {view === 'list' ? 'Create Receiving Report — Pending Purchase Orders' : `Receiving Report — ${selectedPo?.poNumber}`}
-          </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <ClipboardCheck className="w-4 h-4" />
+            </div>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+              {view === 'list' ? 'Create Receiving Report — Pending Purchase Orders' : `Receiving Report — ${selectedPo?.poNumber}`}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -293,16 +310,16 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved }) {
           <div className="p-5 border-t border-slate-100 flex justify-end gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setView('list')}
-              className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition"
+              onClick={initialPurchaseOrder ? onClose : () => setView('list')}
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-50 transition"
             >
-              Back
+              {initialPurchaseOrder ? 'Cancel' : 'Back'}
             </button>
             <button
               type="button"
               onClick={handleCreateReport}
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-tr from-emerald-600 to-teal-600 hover:shadow-lg hover:shadow-emerald-500/30 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {isSubmitting ? 'Saving & Generating...' : 'Create Report & Download'}
@@ -310,6 +327,7 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
