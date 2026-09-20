@@ -64,15 +64,15 @@ function AppLayout (){
 export default function App() {
   return (
     <Routes>
-      <Route path="/pos" element={<RequireAuth><CashierPOS /></RequireAuth>} />
+      <Route path="/pos" element={<RequireAuth roles={['CASHIER', 'SUPERVISOR']}><CashierPOS /></RequireAuth>} />
       <Route path="/" element={<Login />} />
 
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
-        <Route path="/adminDashboard" element={<AdminDashboard />} />
-        <Route path="/inventoryList" element={<InventoryList />} />
-        <Route path="/pages/ims/demand" element={<Demand />} />
-        <Route path="/pages/ims/finance" element={<Finance />} />
-        <Route path="/pages/ims/UserManagement" element={<UserManagement />} />
+        <Route path="/adminDashboard" element={<RequireAuth roles={['SUPERVISOR', 'INVENTORY', 'ACCOUNTING']}><AdminDashboard /></RequireAuth>} />
+        <Route path="/inventoryList" element={<RequireAuth roles={['SUPERVISOR', 'INVENTORY']}><InventoryList /></RequireAuth>} />
+        <Route path="/pages/ims/demand" element={<RequireAuth roles={['INVENTORY', 'ACCOUNTING']}><Demand /></RequireAuth>} />
+        <Route path="/pages/ims/finance" element={<RequireAuth roles={['ACCOUNTING']}><Finance /></RequireAuth>} />
+        <Route path="/pages/ims/UserManagement" element={<RequireAuth roles={[]}><UserManagement /></RequireAuth>} />
       </Route>
     </Routes>
   );

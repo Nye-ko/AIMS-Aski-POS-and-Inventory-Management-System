@@ -18,6 +18,15 @@ const generateTempPassword = () => {
   return Math.random().toString(36).slice(-5) + Math.random().toString(36).slice(-5);
 };
 
+// Rejects a change (demotion / deactivation) that would leave no active admin.
+const assertNotLastActiveAdmin = async (target) => {
+  if (target.role !== 'ADMIN' || !target.isActive) return;
+  const otherActiveAdmins = await prisma.user.count({
+    where: { role: 'ADMIN', isActive: true, id: { not: target.id } },
+  });
+  if (otherActiveAdmins === 0) throw new Error('At least one active administrator must remain.');
+};
+
 const UserModel = {
   findAll: async () => {
     return prisma.user.findMany({
@@ -48,10 +57,12 @@ const UserModel = {
     });
   },
 
-  updateRole: async (id, role) => {
+  updateRole: async (id, role, actingUserId) => {
     if (!CREATABLE_ROLES.includes(role)) throw new Error('Invalid role selected.');
     const user = await prisma.user.findUnique({ where: { id: parseInt(id, 10) } });
     if (!user) throw new Error('User not found.');
+    if (user.id === actingUserId) throw new Error('You cannot change your own role.');
+    if (user.role !== role) await assertNotLastActiveAdmin(user);
 
     return prisma.user.update({
       where: { id: parseInt(id, 10) },
@@ -60,9 +71,13 @@ const UserModel = {
     });
   },
 
-  setActive: async (id, isActive) => {
+  setActive: async (id, isActive, actingUserId) => {
     const user = await prisma.user.findUnique({ where: { id: parseInt(id, 10) } });
     if (!user) throw new Error('User not found.');
+    if (!isActive) {
+      if (user.id === actingUserId) throw new Error('You cannot deactivate your own account.');
+      await assertNotLastActiveAdmin(user);
+    }
 
     return prisma.user.update({
       where: { id: parseInt(id, 10) },

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { exportCsv } from '../utils/exportCsv';
 import { useAuth } from '../auth/AuthContext';
+import { apiFetch } from '../auth/apiFetch';
 
 // Maps a product/category name to a distinct, representative lucide icon
 // for the dropdown menu and product card placeholders — every category
@@ -148,7 +149,7 @@ export default function CashierPOS() {
   // FETCH PRODUCTS FROM BACKEND
   const fetchProducts = () => {
     setLoading(true);
-    fetch('http://localhost:5000/api/products')
+    apiFetch('http://localhost:5000/api/products')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch products');
         return res.json();
@@ -404,7 +405,7 @@ const handleConfirmSale = async () => {
   // FEATURE 3: EOD RECONCILIATION API
   const fetchExpectedCash = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/reconciliation/expected-cash');
+      const res = await apiFetch('http://localhost:5000/api/reconciliation/expected-cash');
       if (res.ok) {
         const data = await res.json();
 

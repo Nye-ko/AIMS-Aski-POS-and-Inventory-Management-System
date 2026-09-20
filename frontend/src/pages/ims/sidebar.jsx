@@ -143,15 +143,17 @@ export default function Sidebar() {
     navigate('/', { replace: true });
   };
 
-  const sidebarLinks = [
-    { id: 'home', label: 'Home', icon: Home, path: '/adminDashboard' },
-    { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList' },
-    { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand' },
-    { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance' },
-    ...(user?.role === 'ADMIN'
-      ? [{ id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement' }]
-      : []),
+  // Mirrors the route guards in App.jsx (ADMIN sees everything).
+  const allSidebarLinks = [
+    { id: 'home', label: 'Home', icon: Home, path: '/adminDashboard', roles: ['SUPERVISOR', 'INVENTORY', 'ACCOUNTING'] },
+    { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList', roles: ['SUPERVISOR', 'INVENTORY'] },
+    { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand', roles: ['INVENTORY', 'ACCOUNTING'] },
+    { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance', roles: ['ACCOUNTING'] },
+    { id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement', roles: [] },
   ];
+  const sidebarLinks = allSidebarLinks.filter(
+    (item) => user?.role === 'ADMIN' || item.roles.includes(user?.role)
+  );
 
   const handleNavClick = (item) => {
     if (item.id === 'users' && !isAdminAuthenticated) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { apiFetch } from '../auth/apiFetch';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const POLL_INTERVAL_MS = 60000;
@@ -49,8 +50,8 @@ export function useAlertNotifications() {
   const refresh = useCallback(async () => {
     try {
       const [lowRes, expRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/alerts/low-stock`),
-        fetch(`${API_BASE_URL}/alerts/expiry`),
+        apiFetch(`${API_BASE_URL}/alerts/low-stock`),
+        apiFetch(`${API_BASE_URL}/alerts/expiry`),
       ]);
       if (!lowRes.ok || !expRes.ok) throw new Error('Failed to load alerts');
       const [lowBody, expBody] = await Promise.all([lowRes.json(), expRes.json()]);

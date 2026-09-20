@@ -7,6 +7,8 @@ import CreatePurchaseOrderModal from './CreatePurchaseOrderModal';
 import ReceivingReportModal from './ReceivingReportModal';
 import ViewReceivingReportModal from './ViewReceivingReportModal';
 
+import { apiFetch } from '../../auth/apiFetch';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 
 export default function PurchaseOrdersList({ isOpen, onClose, products }) {
@@ -32,7 +34,7 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
     setIsLoading(true);
     setListError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/purchase-orders`);
+      const res = await apiFetch(`${API_BASE_URL}/purchase-orders`);
       if (!res.ok) throw new Error('Failed to load purchase orders');
       setPurchaseOrders(await res.json());
     } catch (err) {

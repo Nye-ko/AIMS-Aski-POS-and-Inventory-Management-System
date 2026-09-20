@@ -27,11 +27,7 @@ import {
 } from 'recharts';
 import NotificationPanel from './NotificationPanel';
 import { useAlertNotifications } from '../../hooks/useAlertNotifications';
-
-// Socket connection to backend port 5000
-const socket = io('http://localhost:5000', {
-  transports: ['websocket', 'polling']
-});
+import { authHeader, getAuthToken } from '../../auth/apiFetch';
 
 export default function Finance() {
   const [revenueComparisonData, setRevenueComparisonData] = useState([]);
@@ -40,7 +36,7 @@ export default function Finance() {
   const [error, setError] = useState(null);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notif = useAlertNotifications();
-  const [isConnected, setIsConnected] = useState(socket.connected);
+  const [isConnected, setIsConnected] = useState(false);
 
   // Helper function to extract array data safely
   const handleDataResponse = (responseData) => {
@@ -60,7 +56,7 @@ export default function Finance() {
     setError(null);
     try {
       // FULL URL TO EXPRESS SERVER (Port 5000)
-      const response = await axios.get('http://localhost:5000/api/finance/summary');
+      const response = await axios.get('http://localhost:5000/api/finance/summary', { headers: authHeader() });
       handleDataResponse(response.data);
     } catch (err) {
       console.error('Failed to load financial data:', err);
@@ -72,6 +68,12 @@ export default function Finance() {
 
   useEffect(() => {
     fetchFinanceData();
+
+    const socket = io('http://localhost:5000', {
+      transports: ['websocket', 'polling'],
+      auth: { token: getAuthToken() },
+    });
+    setIsConnected(socket.connected);
 
     function onConnect() { setIsConnected(true); }
     function onDisconnect() { setIsConnected(false); }
@@ -85,6 +87,7 @@ export default function Finance() {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('finance_updated', onFinanceUpdated);
+      socket.disconnect();
     };
   }, []);
 

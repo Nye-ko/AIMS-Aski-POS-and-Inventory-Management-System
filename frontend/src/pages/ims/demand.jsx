@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { authHeader } from '../../auth/apiFetch';
 import {
   TrendingUp,
   AlertTriangle,
@@ -31,7 +32,7 @@ export default function Demand() {
     try {
       const days = demandMode === 'future' ? 60 : 30;
       // Fetching predictions from Express backend endpoint
-      const res = await axios.get(`http://localhost:5000/api/forecast?days=${days}`);
+      const res = await axios.get(`http://localhost:5000/api/forecast?days=${days}`, { headers: authHeader() });
 
       if (res.data.success) {
         setForecast(res.data.data);

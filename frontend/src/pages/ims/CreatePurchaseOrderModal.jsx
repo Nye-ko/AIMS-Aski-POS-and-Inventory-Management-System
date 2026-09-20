@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
+import { apiFetch } from '../../auth/apiFetch';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 const DRAFT_STORAGE_KEY = 'aims.po.draft';
 const TAGGING_OPTIONS = ['Regular', 'Urgent', 'Rush', 'Special Order'];
@@ -36,7 +38,7 @@ const emptyHeader = {
 const emptyQuickAdd = { barcode: '', description: '', shelf: '', category: '', uom: '', unitCost: '', qty: 1, productId: null };
 
 async function downloadPurchaseOrderFile(purchaseOrder) {
-  const res = await fetch(`${API_BASE_URL}/purchase-orders/${purchaseOrder.id}/export`);
+  const res = await apiFetch(`${API_BASE_URL}/purchase-orders/${purchaseOrder.id}/export`);
   if (!res.ok) throw new Error(`Failed to export ${purchaseOrder.poNumber}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

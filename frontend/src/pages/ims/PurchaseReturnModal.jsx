@@ -4,11 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { X, RotateCcw, Loader2, Inbox, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
+import { apiFetch } from '../../auth/apiFetch';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 const REASON_OPTIONS = ['Damaged', 'Expired', 'Incorrect Item', 'Overstock', 'Retail'];
 
 async function downloadPurchaseReturnFile(purchaseReturn) {
-  const res = await fetch(`${API_BASE_URL}/purchase-returns/${purchaseReturn.id}/export`);
+  const res = await apiFetch(`${API_BASE_URL}/purchase-returns/${purchaseReturn.id}/export`);
   if (!res.ok) throw new Error(`Failed to export ${purchaseReturn.returnNo}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -53,7 +55,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
     setIsLoadingList(true);
     setListError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/receiving-reports`);
+      const res = await apiFetch(`${API_BASE_URL}/receiving-reports`);
       if (!res.ok) throw new Error('Failed to load receiving reports');
       setReceivingReports(await res.json());
     } catch (err) {

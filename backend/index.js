@@ -23,7 +23,13 @@ const { ReceivingReportModel } = require('./models/ReceivingReport');
 const { buildReceivingReportWorkbook } = require('./services/receivingReportExcel');
 const { PurchaseReturnModel } = require('./models/PurchaseReturn');
 const { buildPurchaseReturnWorkbook } = require('./services/purchaseReturnExcel');
-const { AuthModel, authenticateToken, STALE_SESSION_ERROR } = require('./models/Auth');
+const {
+  AuthModel,
+  authenticateToken,
+  requireRole,
+  authenticateSocketToken,
+  STALE_SESSION_ERROR,
+} = require('./models/Auth');
 const { UserModel } = require('./models/User');
 
 // Import Services
@@ -51,7 +57,35 @@ const io = new Server(server, {
 
 app.set('io', io);
 
+// Only logged-in, active users may open a socket. Finance broadcasts go to a
+// role-scoped room so cashiers/inventory staff never receive them.
+io.use(async (socket, next) => {
+  const user = await authenticateSocketToken(socket.handshake.auth && socket.handshake.auth.token);
+  if (!user) return next(new Error('Authentication required.'));
+  socket.data.user = user;
+  next();
+});
+
+// Role groups shared by the route guards below (ADMIN is always allowed by requireRole).
+const ROLES = {
+  POS: ['CASHIER', 'SUPERVISOR'],
+  DASHBOARD: ['SUPERVISOR', 'INVENTORY', 'ACCOUNTING'],
+  INVENTORY_READ: ['SUPERVISOR', 'INVENTORY'],
+  INVENTORY_WRITE: ['INVENTORY'],
+  PRODUCT_LOOKUP: ['CASHIER', 'SUPERVISOR', 'INVENTORY'],
+  FORECAST: ['INVENTORY', 'ACCOUNTING'],
+  FINANCE: ['ACCOUNTING'],
+  RECONCILIATION_WRITE: ['CASHIER', 'SUPERVISOR', 'ACCOUNTING'],
+  RECONCILIATION_READ: ['SUPERVISOR', 'ACCOUNTING'],
+};
+
+const FINANCE_ROOM = 'finance';
+const DASHBOARD_ROOM = 'dashboard';
+
 io.on('connection', (socket) => {
+  const { role } = socket.data.user;
+  if (role === 'ADMIN' || ROLES.FINANCE.includes(role)) socket.join(FINANCE_ROOM);
+  if (role === 'ADMIN' || ROLES.DASHBOARD.includes(role)) socket.join(DASHBOARD_ROOM);
   console.log('Client connected to WebSocket:', socket.id);
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
@@ -122,7 +156,7 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 
 app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await UserModel.updateRole(req.params.id, req.body.role);
+    const user = await UserModel.updateRole(req.params.id, req.body.role, req.user.id);
     res.json(user);
   } catch (error) {
     console.error('Error updating user role:', error);
@@ -132,7 +166,7 @@ app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, re
 
 app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await UserModel.setActive(req.params.id, req.body.isActive);
+    const user = await UserModel.setActive(req.params.id, req.body.isActive, req.user.id);
     res.json(user);
   } catch (error) {
     console.error('Error updating user status:', error);
@@ -151,7 +185,7 @@ app.post('/api/users/:id/reset-password', authenticateToken, requireAdmin, async
 });
 
 // 1. Get All Products (Includes supplier relations and computed status)
-app.get('/api/products', async (req, res) => {
+app.get('/api/products', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP), async (req, res) => {
   try {
     const products = await ProductModel.findAll();
     res.json(products);
@@ -162,7 +196,7 @@ app.get('/api/products', async (req, res) => {
 });
 
 // 2. Create New Product
-app.post('/api/products', async (req, res) => {
+app.post('/api/products', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const product = await ProductModel.create(req.body);
     res.status(201).json(product);
@@ -173,7 +207,7 @@ app.post('/api/products', async (req, res) => {
 });
 
 // 2b. Update a product (currently used to set expiry, minStock, etc.)
-app.patch('/api/products/:id', async (req, res) => {
+app.patch('/api/products/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { before, after } = await ProductModel.update(req.params.id, req.body);
     if (!after) return res.status(404).json({ error: 'Product not found' });
@@ -193,7 +227,7 @@ app.patch('/api/products/:id', async (req, res) => {
 });
 
 // 3. Update Product Stock (Add Stock)
-app.patch('/api/products/:id/add-stock', async (req, res) => {
+app.patch('/api/products/:id/add-stock', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { quantity, supplierId } = req.body;
     if (!quantity || isNaN(quantity)) {
@@ -208,7 +242,7 @@ app.patch('/api/products/:id/add-stock', async (req, res) => {
 });
 
 // 4. Search Product by Barcode or 6-digit Code
-app.get('/api/products/barcode/:code', async (req, res) => {
+app.get('/api/products/barcode/:code', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP), async (req, res) => {
   try {
     const products = await ProductModel.findByBarcode(req.params.code);
     if (!products || products.length === 0) {
@@ -222,7 +256,7 @@ app.get('/api/products/barcode/:code', async (req, res) => {
 });
 
 // 5. Get All Suppliers (For inventory dropdowns)
-app.get('/api/suppliers', async (req, res) => {
+app.get('/api/suppliers', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
   try {
     const suppliers = await prisma.supplier.findMany({
       orderBy: { name: 'asc' },
@@ -237,7 +271,7 @@ app.get('/api/suppliers', async (req, res) => {
 // --- PURCHASE ORDER ROUTES ---
 
 // Create a Purchase Order for one supplier from checked low-stock items
-app.post('/api/purchase-orders', authenticateToken, async (req, res) => {
+app.post('/api/purchase-orders', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { supplierId, items, terms, remarks, preparedBy } = req.body;
     const purchaseOrder = await PurchaseOrderModel.create({
@@ -257,7 +291,7 @@ app.post('/api/purchase-orders', authenticateToken, async (req, res) => {
 });
 
 // Download the styled .xlsx for a saved Purchase Order
-app.get('/api/purchase-orders/:id/export', async (req, res) => {
+app.get('/api/purchase-orders/:id/export', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseOrder = await PurchaseOrderModel.findById(req.params.id);
     if (!purchaseOrder) {
@@ -276,7 +310,7 @@ app.get('/api/purchase-orders/:id/export', async (req, res) => {
 });
 
 // Purchase Orders awaiting a Receiving Report
-app.get('/api/purchase-orders/pending', async (req, res) => {
+app.get('/api/purchase-orders/pending', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const pendingOrders = await PurchaseOrderModel.findPending();
     res.json(pendingOrders);
@@ -287,7 +321,7 @@ app.get('/api/purchase-orders/pending', async (req, res) => {
 });
 
 // All Purchase Orders, for the "Purchase Orders" browse window (optionally filtered by PO number)
-app.get('/api/purchase-orders', async (req, res) => {
+app.get('/api/purchase-orders', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseOrders = await PurchaseOrderModel.findAll(req.query.search);
     res.json(purchaseOrders);
@@ -298,7 +332,7 @@ app.get('/api/purchase-orders', async (req, res) => {
 });
 
 // A single Purchase Order, for the "Open" view/edit action
-app.get('/api/purchase-orders/:id', async (req, res) => {
+app.get('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseOrder = await PurchaseOrderModel.findById(req.params.id);
     if (!purchaseOrder) {
@@ -312,7 +346,7 @@ app.get('/api/purchase-orders/:id', async (req, res) => {
 });
 
 // Delete a Purchase Order (blocked once a Receiving Report has been filed against it)
-app.delete('/api/purchase-orders/:id', authenticateToken, async (req, res) => {
+app.delete('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     await PurchaseOrderModel.delete(req.params.id);
     res.status(204).end();
@@ -326,7 +360,7 @@ app.delete('/api/purchase-orders/:id', authenticateToken, async (req, res) => {
 // --- RECEIVING REPORT ROUTES ---
 
 // File a Receiving Report against a pending Purchase Order (tops up stock/cost, closes the PO)
-app.post('/api/receiving-reports', authenticateToken, async (req, res) => {
+app.post('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { purchaseOrderId, items, deliveryNote, invoiceNo, remarks } = req.body;
     const receivingReport = await ReceivingReportModel.create({
@@ -346,7 +380,7 @@ app.post('/api/receiving-reports', authenticateToken, async (req, res) => {
 });
 
 // Download the styled .xlsx for a saved Receiving Report
-app.get('/api/receiving-reports/:id/export', async (req, res) => {
+app.get('/api/receiving-reports/:id/export', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const receivingReport = await ReceivingReportModel.findById(req.params.id);
     if (!receivingReport) {
@@ -365,7 +399,7 @@ app.get('/api/receiving-reports/:id/export', async (req, res) => {
 });
 
 // All Receiving Reports, for the "Create Purchase Return" picker
-app.get('/api/receiving-reports', async (req, res) => {
+app.get('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const receivingReports = await ReceivingReportModel.findAll();
     res.json(receivingReports);
@@ -376,7 +410,7 @@ app.get('/api/receiving-reports', async (req, res) => {
 });
 
 // A single Receiving Report, for the "View Receiving Report" action
-app.get('/api/receiving-reports/:id', async (req, res) => {
+app.get('/api/receiving-reports/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const receivingReport = await ReceivingReportModel.findById(req.params.id);
     if (!receivingReport) {
@@ -392,7 +426,7 @@ app.get('/api/receiving-reports/:id', async (req, res) => {
 // --- PURCHASE RETURN ROUTES ---
 
 // File a Purchase Return against a Receiving Report (decrements product stock)
-app.post('/api/purchase-returns', authenticateToken, async (req, res) => {
+app.post('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { receivingReportId, items, reason, remarks } = req.body;
     const purchaseReturn = await PurchaseReturnModel.create({
@@ -411,7 +445,7 @@ app.post('/api/purchase-returns', authenticateToken, async (req, res) => {
 });
 
 // Download the styled .xlsx for a saved Purchase Return
-app.get('/api/purchase-returns/:id/export', async (req, res) => {
+app.get('/api/purchase-returns/:id/export', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseReturn = await PurchaseReturnModel.findById(req.params.id);
     if (!purchaseReturn) {
@@ -432,14 +466,14 @@ app.get('/api/purchase-returns/:id/export', async (req, res) => {
 // --- TRANSACTIONS ROUTES ---
 
 // Create New Transaction (Checkout)
-app.post('/api/transactions', authenticateToken, async (req, res) => {
+app.post('/api/transactions', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
   try {
     const io = req.app.get('io');
     const result = await TransactionModel.createCheckout({ ...req.body, cashierId: req.user.id }, io);
 
     // Broadcast updated financial metrics over WebSocket
     const updatedFinance = await FinanceModel.getSummary();
-    io.emit('finance_updated', updatedFinance);
+    io.to(FINANCE_ROOM).emit('finance_updated', updatedFinance);
 
     res.status(201).json(result);
 
@@ -476,7 +510,7 @@ app.post('/api/transactions', authenticateToken, async (req, res) => {
 
 // Silent on-demand print (used by the POS "Print" preview button, and for
 // reprints) — same printer path as the automatic post-checkout print above.
-app.post('/api/print/receipt', authenticateToken, async (req, res) => {
+app.post('/api/print/receipt', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
   try {
     const result = await receiptPrinter.printReceipt({ ...req.body, cashier: req.user.username });
     res.json(result);
@@ -487,7 +521,7 @@ app.post('/api/print/receipt', authenticateToken, async (req, res) => {
 });
 
 // Get All Transactions
-app.get('/api/transactions', async (req, res) => {
+app.get('/api/transactions', authenticateToken, requireRole(...ROLES.FINANCE), async (req, res) => {
   try {
     const transactions = await TransactionModel.findAll();
     res.json(transactions);
@@ -498,13 +532,14 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 // --- DASHBOARD ROUTE ---
-app.get('/api/dashboard/summary', async (req, res) => {
+app.get('/api/dashboard/summary', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
-    const [todayRevenue, lowStockCount, dailySalesTrend, expiryWatchList] = await Promise.all([
+    const [todayRevenue, lowStockCount, dailySalesTrend, expiryWatchList, recentTransactions] = await Promise.all([
       DashboardModel.getTodayRevenue(),
       DashboardModel.getLowStockCount(10), // Threshold = 10 items
       DashboardModel.getDailySalesTrend(),
       DashboardModel.getExpiryWatchList(30),
+      TransactionModel.findAll({ limit: 5 }),
     ]);
 
     res.json({
@@ -512,6 +547,7 @@ app.get('/api/dashboard/summary', async (req, res) => {
       lowStockCount,
       dailySalesTrend,
       expiryWatchList,
+      recentTransactions,
     });
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
@@ -520,7 +556,7 @@ app.get('/api/dashboard/summary', async (req, res) => {
 });
 
 // --- AI FORECASTING ROUTE ---
-app.get('/api/forecast', async (req, res) => {
+app.get('/api/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const { days = 30 } = req.query;
     const forecastData = await DemandForecastModel.getForecastData(days);
@@ -540,7 +576,7 @@ app.get('/api/forecast', async (req, res) => {
 });
 
 // --- FINANCE CONTROL ROUTE ---
-app.get('/api/finance/summary', async (req, res) => {
+app.get('/api/finance/summary', authenticateToken, requireRole(...ROLES.FINANCE), async (req, res) => {
   try {
     const data = await FinanceModel.getSummary();
     res.json(data);
@@ -553,7 +589,7 @@ app.get('/api/finance/summary', async (req, res) => {
 // --- RECONCILIATION ROUTES ---
 
 // Get Expected Cash for Today
-app.get('/api/reconciliation/expected-cash', async (req, res) => {
+app.get('/api/reconciliation/expected-cash', authenticateToken, requireRole(...ROLES.RECONCILIATION_WRITE), async (req, res) => {
   try {
     const data = await ReconciliationModel.getExpectedCash();
     return res.status(200).json(data);
@@ -568,14 +604,14 @@ app.get('/api/reconciliation/expected-cash', async (req, res) => {
 });
 
 // Save End of Day Reconciliation
-app.post('/api/reconciliation', authenticateToken, async (req, res) => {
+app.post('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCILIATION_WRITE), async (req, res) => {
   try {
     const record = await ReconciliationModel.create({ ...req.body, cashierId: req.user.id });
 
     // Broadcast updated financial metrics over WebSocket
     const io = req.app.get('io');
     const updatedFinance = await FinanceModel.getSummary();
-    io.emit('finance_updated', updatedFinance);
+    io.to(FINANCE_ROOM).emit('finance_updated', updatedFinance);
 
     res.status(201).json({ message: 'Reconciliation Submitted', record });
   } catch (error) {
@@ -588,7 +624,7 @@ app.post('/api/reconciliation', authenticateToken, async (req, res) => {
 });
 
 // Get All Historical Reconciliations
-app.get('/api/reconciliation', async (req, res) => {
+app.get('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCILIATION_READ), async (req, res) => {
   try {
     const recons = await ReconciliationModel.findAll();
     res.json(recons);
@@ -600,7 +636,7 @@ app.get('/api/reconciliation', async (req, res) => {
 
 // --- ALERT ROUTES (low-stock and expiry emails) ---
 
-app.get('/api/alerts/low-stock', async (req, res) => {
+app.get('/api/alerts/low-stock', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const products = await lowStockAlerts.findCurrentlyLow();
     res.json({ count: products.length, products });
@@ -610,7 +646,7 @@ app.get('/api/alerts/low-stock', async (req, res) => {
   }
 });
 
-app.post('/api/alerts/low-stock/send-now', async (req, res) => {
+app.post('/api/alerts/low-stock/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   if (!mailer.isConfigured()) {
     return res.status(503).json({
       error: 'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_RECIPIENTS in backend/.env.',
@@ -625,7 +661,7 @@ app.post('/api/alerts/low-stock/send-now', async (req, res) => {
   }
 });
 
-app.get('/api/alerts/expiry', async (req, res) => {
+app.get('/api/alerts/expiry', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const products = await expiryAlerts.findExpiringSoon();
     res.json({
@@ -639,7 +675,7 @@ app.get('/api/alerts/expiry', async (req, res) => {
   }
 });
 
-app.post('/api/alerts/expiry/send-now', async (req, res) => {
+app.post('/api/alerts/expiry/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   if (!mailer.isConfigured()) {
     return res.status(503).json({
       error: 'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_RECIPIENTS in backend/.env.',
@@ -656,7 +692,7 @@ app.post('/api/alerts/expiry/send-now', async (req, res) => {
 
 // --- FORECAST DIGEST ROUTES ---
 
-app.post('/api/alerts/forecast/send-now', async (req, res) => {
+app.post('/api/alerts/forecast/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   if (!mailer.isConfigured()) {
     return res.status(503).json({
       error: 'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_RECIPIENTS in backend/.env.',
@@ -672,7 +708,7 @@ app.post('/api/alerts/forecast/send-now', async (req, res) => {
   }
 });
 
-app.get('/api/alerts/forecast', async (req, res) => {
+app.get('/api/alerts/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const days = Number(req.query.days) || 30;
     const digest = await forecastAlerts.buildDigest(days);

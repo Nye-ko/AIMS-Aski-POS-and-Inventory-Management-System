@@ -24,6 +24,9 @@ import PurchaseOrdersList from './PurchaseOrdersList';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
 
+import { apiFetch } from '../../auth/apiFetch';
+import { useAuth } from '../../auth/AuthContext';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 
 // Same category -> icon mapping as cashierPOS.jsx, so a product shows the
@@ -81,8 +84,8 @@ export default function InventorySystem() {
     setLoading(true);
     try {
       const [productsRes, suppliersRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/products`),
-        fetch(`${API_BASE_URL}/suppliers`)
+        apiFetch(`${API_BASE_URL}/products`),
+        apiFetch(`${API_BASE_URL}/suppliers`)
       ]);
 
       if (!productsRes.ok) throw new Error(`Products endpoint returned status ${productsRes.status}`);
@@ -316,6 +319,9 @@ function ToolbarButton({ icon: Icon, iconColor, label, onClick }) {
 // INVENTORY PAGE COMPONENT
 // ==========================================
 function InventoryPage({ products, setProducts, suppliers, exportToExcel, onDataChanged }) {
+  // Supervisors can browse and export inventory but not change it (matches the backend role guards).
+  const { role } = useAuth();
+  const canWrite = role === 'ADMIN' || role === 'INVENTORY';
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
@@ -412,7 +418,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         supplierId: Number(formData.supplierId)
       };
 
-      const response = await fetch(`${API_BASE_URL}/products`, {
+      const response = await apiFetch(`${API_BASE_URL}/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -460,7 +466,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/products/${selectedProduct.id}/add-stock`, {
+      const response = await apiFetch(`${API_BASE_URL}/products/${selectedProduct.id}/add-stock`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -523,21 +529,25 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         {/* Row 1: utility actions — uniform neutral toolbar buttons, primary action last */}
         <div className="relative z-10 flex flex-wrap items-center gap-2">
           <ToolbarButton icon={FileSpreadsheet} iconColor="text-emerald-600" label="Export Inventory Sheet" onClick={handleExportInventorySheet} />
-          <ToolbarButton
-            icon={PackagePlus}
-            iconColor="text-indigo-600"
-            label="Add Stock"
-            onClick={() => {
-              setIsAddStockOpen(true);
-              setIsFormOpen(false);
-              resetStockForm();
-            }}
-          />
-          <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => setIsPurchaseOrderOpen(true)} />
-          <ToolbarButton icon={Truck} iconColor="text-teal-600" label="Create Receiving Report" onClick={() => setIsReceivingReportOpen(true)} />
-          <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
+          {canWrite && (
+            <>
+              <ToolbarButton
+                icon={PackagePlus}
+                iconColor="text-indigo-600"
+                label="Add Stock"
+                onClick={() => {
+                  setIsAddStockOpen(true);
+                  setIsFormOpen(false);
+                  resetStockForm();
+                }}
+              />
+              <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => setIsPurchaseOrderOpen(true)} />
+              <ToolbarButton icon={Truck} iconColor="text-teal-600" label="Create Receiving Report" onClick={() => setIsReceivingReportOpen(true)} />
+              <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
+            </>
+          )}
 
-          <button
+          {canWrite && <button
             onClick={() => {
               setIsFormOpen(!isFormOpen);
               setIsAddStockOpen(false);
@@ -550,7 +560,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
           >
             {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
-          </button>
+          </button>}
         </div>
 
         <div className="relative z-10 border-t border-slate-100" />
@@ -961,16 +971,26 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                     <td className="px-4 py-3.5">{p.category}</td>
                     <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
                     <td className="px-4 py-3.5 text-center">
-                      <MinStockEditor product={p} onUpdated={(updated) => {
-                        setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
-                      }} />
+                      {canWrite ? (
+                        <MinStockEditor product={p} onUpdated={(updated) => {
+                          setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
+                        }} />
+                      ) : (
+                        <span className="font-semibold text-slate-700">{p.minStock ?? 10}</span>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
                     <td className="px-4 py-3.5 text-center font-bold text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
                     <td className="px-4 py-3.5 text-center">
-                      <ExpiryEditor product={p} onUpdated={(updated) => {
-                        setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
-                      }} />
+                      {canWrite ? (
+                        <ExpiryEditor product={p} onUpdated={(updated) => {
+                          setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
+                        }} />
+                      ) : (
+                        <span className="font-semibold text-slate-700">
+                          {p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : '—'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
@@ -1037,7 +1057,7 @@ function ExpiryEditor({ product, onUpdated }) {
   const commit = async (next) => {
     setSaving(true); setErr('');
     try {
-      const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+      const res = await apiFetch(`${API_BASE_URL}/products/${product.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiryDate: next || null }),
@@ -1084,7 +1104,7 @@ function MinStockEditor({ product, onUpdated }) {
     if (!Number.isFinite(num) || num < 0) return;
     setSaving(true); setErr('');
     try {
-      const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+      const res = await apiFetch(`${API_BASE_URL}/products/${product.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ minStock: num }),

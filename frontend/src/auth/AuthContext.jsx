@@ -57,12 +57,16 @@ export function AuthProvider({ children }) {
     if (!res.ok) throw new Error(body.error || 'Invalid username or password.');
 
     const authed = { token: body.token, ...body.user };
+    // Persist synchronously so the first requests of the next page (which read
+    // the token from storage) don't race the effect below.
+    writeStoredUser(authed);
     setSession(authed);
     setIsAdminAuthenticated(false);
     return authed;
   }, []);
 
   const logout = useCallback(() => {
+    writeStoredUser(null);
     setSession(null);
     setIsAdminAuthenticated(false);
   }, []);

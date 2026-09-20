@@ -3,13 +3,14 @@ const { ProductModel, prisma } = require('./Product');
 
 const TransactionModel = {
   // Fetch all transactions with items and cashier details
-  findAll: async () => {
+  findAll: async ({ limit } = {}) => {
     return await prisma.transaction.findMany({
       include: {
         items: true,
         cashier: { select: { username: true } },
       },
       orderBy: { createdAt: 'desc' },
+      ...(limit ? { take: limit } : {}),
     });
   },
 
@@ -86,7 +87,7 @@ const TransactionModel = {
     });
 
     if (io) {
-      io.emit('transaction_created', transaction);
+      io.to('dashboard').emit('transaction_created', transaction);
     }
 
     // Attach stockUpdates onto the returned object as a non-enumerable property

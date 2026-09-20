@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ClipboardCheck, Loader2, Download } from 'lucide-react';
 
+import { apiFetch } from '../../auth/apiFetch';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 
 async function downloadReceivingReportFile(receivingReport) {
-  const res = await fetch(`${API_BASE_URL}/receiving-reports/${receivingReport.id}/export`);
+  const res = await apiFetch(`${API_BASE_URL}/receiving-reports/${receivingReport.id}/export`);
   if (!res.ok) throw new Error(`Failed to export ${receivingReport.rrNumber}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -33,7 +35,7 @@ export default function ViewReceivingReportModal({ isOpen, onClose, receivingRep
     setLoadError(null);
     setIsLoading(true);
 
-    fetch(`${API_BASE_URL}/receiving-reports/${receivingReportId}`)
+    apiFetch(`${API_BASE_URL}/receiving-reports/${receivingReportId}`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load receiving report');
         return res.json();
