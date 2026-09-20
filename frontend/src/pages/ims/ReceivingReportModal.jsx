@@ -285,8 +285,13 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
                         <input
                           type="number"
                           min="0"
+                          max={item.orderedQty}
                           value={item.quantity}
-                          onChange={(e) => updateItem(item.productId, { quantity: parseInt(e.target.value, 10) || 0 })}
+                          onChange={(e) =>
+                            updateItem(item.productId, {
+                              quantity: Math.max(0, Math.min(item.orderedQty, parseInt(e.target.value, 10) || 0)),
+                            })
+                          }
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-center text-xs"
                         />
                       </td>

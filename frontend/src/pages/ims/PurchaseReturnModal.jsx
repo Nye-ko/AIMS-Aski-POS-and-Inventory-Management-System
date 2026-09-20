@@ -30,10 +30,11 @@ const buildLineItems = (rr) =>
     name: it.product.name,
     unit: it.product.unit || 'PC/S',
     receivedQty: it.quantity,
+    returnableQty: it.returnableQuantity ?? it.quantity,
     currentStock: it.product.stock,
     unitCost: Number(it.unitCost),
     checked: false,
-    quantity: Math.min(it.quantity, it.product.stock) || 0,
+    quantity: Math.min(it.returnableQuantity ?? it.quantity, it.product.stock) || 0,
   }));
 
 export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
@@ -253,13 +254,14 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                     <th className="p-2 w-8"></th>
                     <th className="p-2">Product</th>
                     <th className="p-2 text-center">Received</th>
+                    <th className="p-2 text-center">Returnable</th>
                     <th className="p-2 text-center">In Stock</th>
                     <th className="p-2 text-center w-24">Qty to Return</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {items.map((item) => {
-                    const maxQty = Math.min(item.receivedQty, item.currentStock);
+                    const maxQty = Math.min(item.returnableQty, item.currentStock);
                     return (
                       <tr key={item.productId} className={!item.checked ? 'opacity-40' : ''}>
                         <td className="p-2">
@@ -275,6 +277,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                           <p className="text-[10px] text-slate-400 font-mono">{item.barcode}</p>
                         </td>
                         <td className="p-2 text-center text-slate-500">{item.receivedQty} {item.unit}</td>
+                        <td className="p-2 text-center text-slate-500">{item.returnableQty}</td>
                         <td className="p-2 text-center text-slate-500">{item.currentStock}</td>
                         <td className="p-2">
                           <input

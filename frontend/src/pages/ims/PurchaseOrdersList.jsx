@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
-import { X, Search, ClipboardList, Loader2, Inbox, Plus, FolderOpen, Trash2, ClipboardCheck, Eye } from 'lucide-react';
-import { useAuth } from '../../auth/AuthContext';
+import { X, Search, ClipboardList, Loader2, Inbox, Plus, FolderOpen, Trash2, ClipboardCheck, Eye, Ban } from 'lucide-react';
 import CreatePurchaseOrderModal from './CreatePurchaseOrderModal';
 import ReceivingReportModal from './ReceivingReportModal';
 import ViewReceivingReportModal from './ViewReceivingReportModal';
@@ -11,9 +9,14 @@ import { apiFetch } from '../../auth/apiFetch';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+const STATUS_STYLES = {
+  DRAFT: 'bg-slate-100 text-slate-600 border-slate-300',
+  PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+  RECEIVED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  CANCELLED: 'bg-rose-50 text-rose-600 border-rose-200',
+};
+
 export default function PurchaseOrdersList({ isOpen, onClose, products }) {
-  const { token, logout } = useAuth();
-  const navigate = useNavigate();
 
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,9 +29,9 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
   const [receivingPO, setReceivingPO] = useState(null);
   const [viewingReceivingReportId, setViewingReceivingReportId] = useState(null);
 
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState(null);
+  const [confirmingAction, setConfirmingAction] = useState(null); // 'delete' | 'cancel'
+  const [isActing, setIsActing] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   const fetchPurchaseOrders = async () => {
     setIsLoading(true);
@@ -48,8 +51,8 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
     if (isOpen) {
       setSearch('');
       setSelectedId(null);
-      setConfirmingDelete(false);
-      setDeleteError(null);
+      setConfirmingAction(null);
+      setActionError(null);
       fetchPurchaseOrders();
     }
   }, [isOpen]);
@@ -64,8 +67,8 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
 
   const handleRowClick = (id) => {
     setSelectedId((prev) => (prev === id ? null : id));
-    setConfirmingDelete(false);
-    setDeleteError(null);
+    setConfirmingAction(null);
+    setActionError(null);
   };
 
   const handleOpenSelected = () => {
@@ -76,34 +79,35 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
     fetchPurchaseOrders();
   };
 
-  const handleDeleteSelected = async () => {
-    if (!selectedPO) return;
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      const res = await fetch(`${API_BASE_URL}/purchase-orders/${selectedPO.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+  const canCancel = selectedPO && ['DRAFT', 'PENDING'].includes(selectedPO.status);
+  const canDelete = selectedPO && ['DRAFT', 'CANCELLED'].includes(selectedPO.status);
 
-      if (res.status === 401) {
-        logout();
-        navigate('/', { replace: true });
-        throw new Error('Your session is no longer valid. Please log in again.');
-      }
+  const handleConfirmedAction = async () => {
+    if (!selectedPO || !confirmingAction) return;
+    setIsActing(true);
+    setActionError(null);
+    try {
+      const res =
+        confirmingAction === 'delete'
+          ? await apiFetch(`${API_BASE_URL}/purchase-orders/${selectedPO.id}`, { method: 'DELETE' })
+          : await apiFetch(`${API_BASE_URL}/purchase-orders/${selectedPO.id}/cancel`, { method: 'POST' });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Failed to delete purchase order');
+        throw new Error(body.error || `Failed to ${confirmingAction} purchase order`);
       }
 
-      setPurchaseOrders((prev) => prev.filter((po) => po.id !== selectedPO.id));
-      setSelectedId(null);
-      setConfirmingDelete(false);
+      if (confirmingAction === 'delete') {
+        setPurchaseOrders((prev) => prev.filter((po) => po.id !== selectedPO.id));
+        setSelectedId(null);
+      } else {
+        await fetchPurchaseOrders();
+      }
+      setConfirmingAction(null);
     } catch (err) {
-      setDeleteError(err.message);
+      setActionError(err.message);
     } finally {
-      setIsDeleting(false);
+      setIsActing(false);
     }
   };
 
@@ -149,13 +153,14 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
                   <th className="px-4 py-3">Date Created</th>
                   <th className="px-4 py-3">Supplier</th>
                   <th className="px-4 py-3">Net Amount</th>
+                  <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Received</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading && (
                   <tr>
-                    <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
+                    <td colSpan="6" className="px-4 py-10 text-center text-slate-400">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" /> Loading purchase orders...
                       </div>
@@ -164,14 +169,14 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
                 )}
                 {!isLoading && listError && (
                   <tr>
-                    <td colSpan="5" className="px-4 py-8 text-center text-rose-600 font-semibold">
+                    <td colSpan="6" className="px-4 py-8 text-center text-rose-600 font-semibold">
                       {listError}
                     </td>
                   </tr>
                 )}
                 {!isLoading && !listError && filteredOrders.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
+                    <td colSpan="6" className="px-4 py-10 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <Inbox className="w-6 h-6" />
                         <span>{search ? 'No purchase orders match your search.' : 'No purchase orders yet.'}</span>
@@ -192,7 +197,14 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
                       <td className="px-4 py-3 text-slate-600">{po.supplier?.name || 'N/A'}</td>
                       <td className="px-4 py-3 font-bold text-slate-900">₱{Number(po.totalAmount).toFixed(2)}</td>
                       <td className="px-4 py-3">
-                        {po.receivingReport ? (
+                        <span className={`inline-block border text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${STATUS_STYLES[po.status] || STATUS_STYLES.DRAFT}`}>
+                          {po.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {po.status === 'DRAFT' || po.status === 'CANCELLED' ? (
+                          <span className="text-slate-300">—</span>
+                        ) : po.receivingReport ? (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -227,33 +239,34 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
 
         {/* Bottom action toolbar */}
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0 space-y-3">
-          {deleteError && (
+          {actionError && (
             <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">
-              {deleteError}
+              {actionError}
             </div>
           )}
 
-          {confirmingDelete ? (
+          {confirmingAction ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs font-semibold text-slate-700">
-                Delete <span className="font-black">{selectedPO?.poNumber}</span>? This can't be undone.
+                {confirmingAction === 'delete' ? 'Delete' : 'Cancel'} <span className="font-black">{selectedPO?.poNumber}</span>?{' '}
+                {confirmingAction === 'delete' ? "This can't be undone." : 'It can no longer be received.'}
               </p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setConfirmingDelete(false)}
+                  onClick={() => setConfirmingAction(null)}
                   className="px-4 py-2 bg-white border border-slate-200 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-50 transition cursor-pointer"
                 >
-                  Cancel
+                  Back
                 </button>
                 <button
                   type="button"
-                  onClick={handleDeleteSelected}
-                  disabled={isDeleting}
+                  onClick={handleConfirmedAction}
+                  disabled={isActing}
                   className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-500/20 transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+                  {isActing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {isActing ? 'Working...' : confirmingAction === 'delete' ? 'Confirm Delete' : 'Confirm Cancel PO'}
                 </button>
               </div>
             </div>
@@ -278,8 +291,17 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
               </button>
               <button
                 type="button"
-                onClick={() => setConfirmingDelete(true)}
-                disabled={!selectedPO}
+                onClick={() => setConfirmingAction('cancel')}
+                disabled={!canCancel}
+                className="flex items-center gap-2 text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 font-semibold text-xs transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Ban className="w-4 h-4" />
+                Cancel PO
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingAction('delete')}
+                disabled={!canDelete}
                 className="flex items-center gap-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 font-semibold text-xs transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
@@ -301,8 +323,9 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
         isOpen={!!viewingPO}
         onClose={() => setViewingPO(null)}
         products={products}
-        mode="view"
+        mode={viewingPO?.status === 'DRAFT' ? 'edit' : 'view'}
         purchaseOrder={viewingPO}
+        onSaved={handleCreated}
       />
 
       <ReceivingReportModal

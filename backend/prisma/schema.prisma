@@ -30,6 +30,7 @@ enum ReconciliationStatus {
 }
 
 enum OrderStatus {
+  DRAFT
   PENDING
   RECEIVED
   CANCELLED
@@ -182,6 +183,12 @@ model PurchaseOrder {
   terms       String?             @default("N/A")
   remarks     String?             @db.Text
   preparedBy  String?
+  shipTo          String?
+  shippingAddress String?
+  purpose         String?
+  tagging         String?             @default("Regular")
+  discount        Decimal             @default(0) @db.Decimal(10, 2)
+  // Net payable: (line subtotals + 12% VAT) - discount
   totalAmount Decimal             @db.Decimal(10, 2)
 
   supplierId  Int

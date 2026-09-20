@@ -17,7 +17,7 @@ const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
 const DemandForecastModel = require('./models/DemandForecast');
 const FinanceModel = require('./models/FinanceModel');
-const { PurchaseOrderModel } = require('./models/PurchaseOrder');
+const { PurchaseOrderModel, PurchasingError } = require('./models/PurchaseOrder');
 const { buildPurchaseOrderWorkbook } = require('./services/purchaseOrderExcel');
 const { ReceivingReportModel } = require('./models/ReceivingReport');
 const { buildReceivingReportWorkbook } = require('./services/receivingReportExcel');
@@ -283,23 +283,36 @@ app.get('/api/suppliers', authenticateToken, requireRole(...ROLES.INVENTORY_READ
 
 // --- PURCHASE ORDER ROUTES ---
 
-// Create a Purchase Order for one supplier from checked low-stock items
+// Maps purchasing failures onto HTTP: typed errors carry their own status, a vanished session is 401,
+// anything unexpected is a generic 500.
+const sendPurchasingError = (res, error, action) => {
+  console.error(`Error ${action}:`, error);
+  if (error.message === STALE_SESSION_ERROR) return res.status(401).json({ error: error.message });
+  if (error instanceof PurchasingError) return res.status(error.status).json({ error: error.message });
+  return res.status(500).json({ error: `Failed to ${action}` });
+};
+
+// Create a Purchase Order (DRAFT or PENDING) for one supplier
 app.post('/api/purchase-orders', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { supplierId, items, terms, remarks, preparedBy } = req.body;
+    const { supplierId, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging, status } = req.body;
     const purchaseOrder = await PurchaseOrderModel.create({
       supplierId,
       items,
       terms,
       remarks,
-      preparedBy,
+      discount,
+      shipTo,
+      shippingAddress,
+      purpose,
+      tagging,
+      status,
+      preparedBy: req.user.username,
       createdById: req.user.id,
     });
     res.status(201).json(purchaseOrder);
   } catch (error) {
-    console.error('Error creating purchase order:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to create purchase order' });
+    sendPurchasingError(res, error, 'create purchase order');
   }
 });
 
@@ -358,15 +371,52 @@ app.get('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVE
   }
 });
 
-// Delete a Purchase Order (blocked once a Receiving Report has been filed against it)
+// Edit a DRAFT purchase order (header and items are replaced)
+app.put('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const { supplierId, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging } = req.body;
+    const purchaseOrder = await PurchaseOrderModel.updateDraft(req.params.id, {
+      supplierId,
+      items,
+      terms,
+      remarks,
+      discount,
+      shipTo,
+      shippingAddress,
+      purpose,
+      tagging,
+    });
+    res.json(purchaseOrder);
+  } catch (error) {
+    sendPurchasingError(res, error, 'update purchase order');
+  }
+});
+
+// Submit a DRAFT so it becomes PENDING (receivable)
+app.post('/api/purchase-orders/:id/submit', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await PurchaseOrderModel.submit(req.params.id));
+  } catch (error) {
+    sendPurchasingError(res, error, 'submit purchase order');
+  }
+});
+
+// Cancel a DRAFT or PENDING purchase order
+app.post('/api/purchase-orders/:id/cancel', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await PurchaseOrderModel.cancel(req.params.id));
+  } catch (error) {
+    sendPurchasingError(res, error, 'cancel purchase order');
+  }
+});
+
+// Delete a DRAFT or CANCELLED purchase order
 app.delete('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     await PurchaseOrderModel.delete(req.params.id);
     res.status(204).end();
   } catch (error) {
-    console.error('Error deleting purchase order:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to delete purchase order' });
+    sendPurchasingError(res, error, 'delete purchase order');
   }
 });
 
@@ -386,9 +436,7 @@ app.post('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVEN
     });
     res.status(201).json(receivingReport);
   } catch (error) {
-    console.error('Error creating receiving report:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to create receiving report' });
+    sendPurchasingError(res, error, 'create receiving report');
   }
 });
 
@@ -451,9 +499,31 @@ app.post('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENT
     });
     res.status(201).json(purchaseReturn);
   } catch (error) {
-    console.error('Error creating purchase return:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to create purchase return' });
+    sendPurchasingError(res, error, 'create purchase return');
+  }
+});
+
+// All Purchase Returns
+app.get('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await PurchaseReturnModel.findAll());
+  } catch (error) {
+    console.error('Error fetching purchase returns:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase returns' });
+  }
+});
+
+// A single Purchase Return
+app.get('/api/purchase-returns/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const purchaseReturn = await PurchaseReturnModel.findById(req.params.id);
+    if (!purchaseReturn) {
+      return res.status(404).json({ error: 'Purchase return not found' });
+    }
+    res.json(purchaseReturn);
+  } catch (error) {
+    console.error('Error fetching purchase return:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase return' });
   }
 });
 
