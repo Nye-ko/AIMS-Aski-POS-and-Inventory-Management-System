@@ -65,6 +65,8 @@ model User {
   receivingReports ReceivingReport[]
   purchaseReturns  PurchaseReturn[]
   stockMovements   StockMovement[]
+  auditActions     AuditLog[]      @relation("AuditActor")
+  auditTargets     AuditLog[]      @relation("AuditTarget")
 }
 
 model Supplier {
@@ -319,4 +321,22 @@ model PurchaseReturnItem {
   quantity         Int
   unitCost         Decimal        @db.Decimal(10, 2)
   subtotal         Decimal        @db.Decimal(10, 2)
+}
+
+// Admin actions on user accounts. Username snapshots survive even if a user row is later removed.
+model AuditLog {
+  id             Int      @id @default(autoincrement())
+  action         String   // USER_CREATED | USER_ROLE_CHANGED | USER_ACTIVATED | USER_DEACTIVATED | USER_PIN_SET | USER_PIN_CLEARED | USER_PASSWORD_RESET
+  actorId        Int?
+  actor          User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorUsername  String
+  targetUserId   Int?
+  targetUser     User?    @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  targetUsername String?
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([targetUserId, createdAt])
 }

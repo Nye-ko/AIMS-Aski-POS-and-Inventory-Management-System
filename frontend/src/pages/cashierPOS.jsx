@@ -5,12 +5,13 @@ import {
   Lock, Clock, Banknote, X, Percent, Download, ShieldCheck,
   Check, LayoutGrid, Sprout, Leaf, Wheat, SprayCan, Wrench,
   Pill, PaintBucket, Package, ShoppingCart,
-  Wallet, LogOut, ShoppingBag, Milk, Palette, Coffee,
+  Wallet, LogOut, KeyRound, ShoppingBag, Milk, Palette, Coffee,
   Soup, Cylinder, CheckCircle2
 } from 'lucide-react';
 import { exportCsv } from '../utils/exportCsv';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch } from '../auth/apiFetch';
+import ChangePasswordModal from '../auth/ChangePasswordModal';
 
 // Maps a product/category name to a distinct, representative lucide icon
 // for the dropdown menu and product card placeholders — every category
@@ -80,6 +81,7 @@ const getGreeting = () => {
 
 export default function CashierPOS() {
   const { user, token, logout } = useAuth();
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const navigate = useNavigate();
 
   // A write failed with 401 because the session's JWT points at a user id
@@ -625,6 +627,16 @@ const handleConfirmSale = async () => {
               <Banknote className="w-4 h-4" />
               <span className="hidden sm:inline">X-Reading / EOD</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setShowChangePassword(true)}
+              title="Change password"
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-blue-600 px-3 sm:px-3.5 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span className="hidden sm:inline">Password</span>
+            </button>
+            {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
             <button
               type="button"
               onClick={handleLogout}

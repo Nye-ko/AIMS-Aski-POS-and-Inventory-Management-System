@@ -2,6 +2,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('./Product');
+const loginThrottle = require('../services/loginThrottle');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '12h';
@@ -10,22 +11,44 @@ if (!JWT_SECRET) {
   console.warn('[auth] JWT_SECRET is not set in the environment — login will fail until it is configured in backend/.env.');
 }
 
+// Errors the routes should answer with a specific HTTP status (401 bad credentials, 429 locked).
+class AuthError extends Error {
+  constructor(message, status = 401) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// Compared against when the username doesn't exist, so an unknown user costs the same bcrypt work
+// as a wrong password and response time doesn't reveal which usernames are real.
+const DUMMY_HASH = bcrypt.hashSync('timing-equalizer-not-a-real-password', 10);
+
+const assertNotLocked = (username) => {
+  const remaining = loginThrottle.lockRemainingMs(username);
+  if (remaining > 0) throw new AuthError(loginThrottle.lockMessage(remaining), 429);
+};
+
 const AuthModel = {
   login: async (username, password) => {
-    if (!username || !password) {
-      throw new Error('Username and password are required.');
+    if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password) {
+      throw new AuthError('Username and password are required.', 400);
     }
     if (!JWT_SECRET) {
-      throw new Error('Server auth is not configured (missing JWT_SECRET).');
+      throw new AuthError('Server auth is not configured (missing JWT_SECRET).', 500);
     }
 
-    const user = await prisma.user.findUnique({ where: { username: username.trim() } });
-    if (!user) throw new Error('Invalid username or password.');
+    const name = username.trim();
+    assertNotLocked(name);
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) throw new Error('Invalid username or password.');
+    const user = await prisma.user.findUnique({ where: { username: name } });
+    const valid = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
+    if (!user || !valid) {
+      loginThrottle.recordFailure(name);
+      throw new AuthError('Invalid username or password.');
+    }
+    loginThrottle.clear(name);
 
-    if (!user.isActive) throw new Error('This account has been deactivated. Contact an administrator.');
+    if (!user.isActive) throw new AuthError('This account has been deactivated. Contact an administrator.');
 
     const payload = { id: user.id, username: user.username, role: user.role };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
@@ -36,15 +59,20 @@ const AuthModel = {
   // sensitive admin-only screens (e.g. User Management) behind a fresh password
   // prompt even though their session JWT is already valid.
   verifyPassword: async (userId, password) => {
-    if (!password) throw new Error('Password is required.');
+    if (!password) throw new AuthError('Password is required.', 400);
 
     const user = await prisma.user.findUnique({ where: { id: parseInt(userId, 10) } });
-    if (!user) throw new Error('Invalid admin password. Access denied.');
+    if (!user) throw new AuthError('Invalid admin password. Access denied.');
+    assertNotLocked(user.username);
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) throw new Error('Invalid admin password. Access denied.');
+    const valid = await bcrypt.compare(String(password), user.password);
+    if (!valid) {
+      loginThrottle.recordFailure(user.username);
+      throw new AuthError('Invalid admin password. Access denied.');
+    }
+    loginThrottle.clear(user.username);
 
-    if (!user.isActive) throw new Error('This account has been deactivated. Contact an administrator.');
+    if (!user.isActive) throw new AuthError('This account has been deactivated. Contact an administrator.');
 
     return true;
   },
@@ -117,6 +145,7 @@ async function authenticateSocketToken(token) {
 
 module.exports = {
   AuthModel,
+  AuthError,
   authenticateToken,
   requireRole,
   authenticateSocketToken,

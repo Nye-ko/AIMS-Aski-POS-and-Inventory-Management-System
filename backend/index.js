@@ -31,7 +31,8 @@ const {
   authenticateSocketToken,
   STALE_SESSION_ERROR,
 } = require('./models/Auth');
-const { UserModel } = require('./models/User');
+const { UserModel, UserError } = require('./models/User');
+const { AuditLogModel, AUDIT_ACTIONS } = require('./models/AuditLog');
 
 // Import Services
 const mailer = require('./services/mailer');
@@ -103,7 +104,19 @@ app.post('/api/auth/login', async (req, res) => {
     const result = await AuthModel.login(username, password);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ error: error.message || 'Login failed' });
+    res.status(error.status || 401).json({ error: error.message || 'Login failed' });
+  }
+});
+
+// Self-service password change (any signed-in user). Requires the current password.
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    await UserModel.changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
+    res.json({ changed: true });
+  } catch (error) {
+    if (!(error instanceof UserError)) console.error('Error changing password:', error);
+    const known = error instanceof UserError;
+    res.status(known ? error.status : 500).json({ error: known ? error.message : 'Failed to change password' });
   }
 });
 
@@ -122,7 +135,7 @@ app.post('/api/auth/verify-password', authenticateToken, async (req, res) => {
     await AuthModel.verifyPassword(req.user.id, req.body.password);
     res.json({ valid: true });
   } catch (error) {
-    res.status(401).json({ error: error.message || 'Invalid admin password. Access denied.' });
+    res.status(error.status || 401).json({ error: error.message || 'Invalid admin password. Access denied.' });
   }
 });
 
@@ -148,7 +161,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { fullName, username, password, role } = req.body;
-    const user = await UserModel.create({ fullName, username, password, role });
+    const user = await UserModel.create({ fullName, username, password, role }, req.user);
     res.status(201).json(user);
   } catch (error) {
     console.error('Error creating user:', error);
@@ -158,7 +171,7 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 
 app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await UserModel.updateRole(req.params.id, req.body.role, req.user.id);
+    const user = await UserModel.updateRole(req.params.id, req.body.role, req.user);
     res.json(user);
   } catch (error) {
     console.error('Error updating user role:', error);
@@ -168,7 +181,7 @@ app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, re
 
 app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await UserModel.setActive(req.params.id, req.body.isActive, req.user.id);
+    const user = await UserModel.setActive(req.params.id, req.body.isActive, req.user);
     res.json(user);
   } catch (error) {
     console.error('Error updating user status:', error);
@@ -180,7 +193,7 @@ app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, 
 app.put('/api/users/:id/pin', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const pin = req.body.pin === null ? null : String(req.body.pin ?? '');
-    const user = await UserModel.setPin(req.params.id, pin);
+    const user = await UserModel.setPin(req.params.id, pin, req.user);
     res.json(user);
   } catch (error) {
     console.error('Error updating user PIN:', error);
@@ -190,11 +203,24 @@ app.put('/api/users/:id/pin', authenticateToken, requireAdmin, async (req, res) 
 
 app.post('/api/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const result = await UserModel.resetPassword(req.params.id);
+    const result = await UserModel.resetPassword(req.params.id, req.user);
     res.json(result);
   } catch (error) {
     console.error('Error resetting password:', error);
     res.status(400).json({ error: error.message || 'Failed to reset password' });
+  }
+});
+
+// Admin activity log (newest first). Filters: action, targetUserId, actorId, from, to (dates), limit, before (last id loaded).
+app.get('/api/audit-log', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (req.query.action && !AUDIT_ACTIONS.includes(req.query.action)) {
+      return res.status(400).json({ error: `action must be one of: ${AUDIT_ACTIONS.join(', ')}` });
+    }
+    res.json(await AuditLogModel.findAll(req.query));
+  } catch (error) {
+    console.error('Error fetching audit log:', error);
+    res.status(500).json({ error: 'Failed to fetch audit log' });
   }
 });
 

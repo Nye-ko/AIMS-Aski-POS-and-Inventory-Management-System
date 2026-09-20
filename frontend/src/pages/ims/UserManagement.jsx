@@ -17,6 +17,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
+import AuditLogPanel from './AuditLogPanel';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -24,6 +25,7 @@ const ROLE_OPTIONS = [
   { value: 'CASHIER', label: 'Cashier', hint: 'Front-of-house POS access' },
   { value: 'SUPERVISOR', label: 'Supervisor', hint: 'Discounts, overrides & report verification access' },
   { value: 'INVENTORY', label: 'Inventory Staff', hint: 'Stock management, POs & receiving reports access' },
+  { value: 'ACCOUNTING', label: 'Accounting', hint: 'Finance, reconciliation & forecasting access' },
 ];
 
 const ROLE_BADGE = {
@@ -81,6 +83,8 @@ export default function UserManagement() {
   const [rowError, setRowError] = useState(null);
   const [resetResult, setResetResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [activityVersion, setActivityVersion] = useState(0);
+  const bumpActivity = () => setActivityVersion((v) => v + 1);
 
   // Supervisor approval PIN dialog (used at the POS for discounts and X-Reading)
   const [pinTarget, setPinTarget] = useState(null);
@@ -182,6 +186,7 @@ export default function UserManagement() {
       if (!res.ok) throw new Error(body.error || 'Failed to create user account.');
 
       setUsers((prev) => [body, ...prev]);
+      bumpActivity();
       handleReset();
     } catch (err) {
       setFormError(err.message || 'Failed to create user account.');
@@ -218,6 +223,7 @@ export default function UserManagement() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Failed to update role.');
       setUsers((prev) => prev.map((row) => (row.id === u.id ? body : row)));
+      bumpActivity();
       cancelEditRole();
     } catch (err) {
       setRowError(err.message || 'Failed to update role.');
@@ -239,6 +245,7 @@ export default function UserManagement() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Failed to update status.');
       setUsers((prev) => prev.map((row) => (row.id === u.id ? body : row)));
+      bumpActivity();
     } catch (err) {
       setRowError(err.message || 'Failed to update status.');
     } finally {
@@ -259,6 +266,7 @@ export default function UserManagement() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Failed to reset password.');
       setResetResult({ username: u.username, tempPassword: body.tempPassword });
+      bumpActivity();
     } catch (err) {
       setRowError(err.message || 'Failed to reset password.');
     } finally {
@@ -296,6 +304,7 @@ export default function UserManagement() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Failed to update PIN.');
       setUsers((prev) => prev.map((row) => (row.id === pinTarget.id ? body : row)));
+      bumpActivity();
       closePinDialog();
     } catch (err) {
       setPinError(err.message || 'Failed to update PIN.');
@@ -715,6 +724,8 @@ export default function UserManagement() {
           </div>
         </div>
       )}
+
+      <AuditLogPanel refreshKey={activityVersion} />
     </div>
   );
 }
