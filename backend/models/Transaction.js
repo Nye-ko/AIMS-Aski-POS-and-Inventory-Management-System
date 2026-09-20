@@ -1,6 +1,7 @@
 // models/Transaction.js
 const { ProductModel, prisma } = require('./Product');
 const { verifyApproval, consumeApproval } = require('../services/posApproval');
+const { recordMovement } = require('./stockLedger');
 
 class CheckoutError extends Error {
   constructor(status, message, code = 'CHECKOUT_REJECTED') {
@@ -147,6 +148,19 @@ const TransactionModel = {
       // Capture post-sale stock so the caller can detect low-stock crossings for email alerts.
       const after = await tx.product.findMany({ where: { id: { in: lines.map((l) => l.product.id) } } });
       const afterById = new Map(after.map((p) => [p.id, p]));
+      for (const { product, quantity } of lines) {
+        await recordMovement(tx, {
+          productId: product.id,
+          type: 'SALE',
+          quantity: -quantity,
+          balanceAfter: afterById.get(product.id).stock,
+          referenceType: 'Transaction',
+          referenceId: newTx.id,
+          referenceNo: newTx.transactionNo,
+          userId: validCashierId,
+        });
+      }
+
       const stockUpdates = lines.map(({ product, quantity }) => {
         const updated = afterById.get(product.id);
         return {

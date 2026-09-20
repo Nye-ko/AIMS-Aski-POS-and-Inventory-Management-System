@@ -1,5 +1,6 @@
 const { prisma } = require('./Product');
 const { VAT_RATE, PurchasingError } = require('./PurchaseOrder');
+const { changeStock } = require('./stockLedger');
 
 const MAX_UNIT_COST = 10000000;
 
@@ -114,20 +115,26 @@ const ReceivingReportModel = {
         },
       });
 
-      // Received goods land in stock at their actual received cost
+      const rrNumber = generateRrNumber(created.id, created.receivedAt);
+
+      // Received goods land in stock (logged in the ledger) at their actual received cost
       for (const item of lineItems) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: { increment: item.quantity },
-            costPrice: item.unitCost,
-          },
+        await changeStock(tx, {
+          productId: item.productId,
+          delta: item.quantity,
+          type: 'PURCHASE_RECEIPT',
+          reason: `Received against ${purchaseOrder.poNumber}`,
+          referenceType: 'ReceivingReport',
+          referenceId: created.id,
+          referenceNo: rrNumber,
+          userId: validReceivedById,
         });
+        await tx.product.update({ where: { id: item.productId }, data: { costPrice: item.unitCost } });
       }
 
       return tx.receivingReport.update({
         where: { id: created.id },
-        data: { rrNumber: generateRrNumber(created.id, created.receivedAt) },
+        data: { rrNumber },
         include: reportInclude,
       });
     });

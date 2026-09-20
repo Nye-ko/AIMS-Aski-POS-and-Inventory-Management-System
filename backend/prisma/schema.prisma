@@ -36,6 +36,15 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum StockMovementType {
+  OPENING
+  PURCHASE_RECEIPT
+  MANUAL_ADD
+  SALE
+  PURCHASE_RETURN
+  ADJUSTMENT
+}
+
 // MODELS
 
 model User {
@@ -55,6 +64,7 @@ model User {
   purchaseOrders   PurchaseOrder[]
   receivingReports ReceivingReport[]
   purchaseReturns  PurchaseReturn[]
+  stockMovements   StockMovement[]
 }
 
 model Supplier {
@@ -95,8 +105,32 @@ model Product {
   purchaseOrderItems   PurchaseOrderItem[]
   receivingReportItems ReceivingReportItem[]
   purchaseReturnItems  PurchaseReturnItem[]
+  stockMovements       StockMovement[]
 
   @@index([barcode, name])
+}
+
+// Append-only ledger: every change to Product.stock writes one row in the same DB transaction.
+model StockMovement {
+  id            Int               @id @default(autoincrement())
+  productId     Int
+  product       Product           @relation(fields: [productId], references: [id])
+
+  type          StockMovementType
+  quantity      Int               // signed change: + adds stock, - removes it
+  balanceAfter  Int
+  reason        String?
+  referenceType String?           // Transaction | ReceivingReport | PurchaseReturn
+  referenceId   Int?
+  referenceNo   String?
+
+  userId        Int?
+  user          User?             @relation(fields: [userId], references: [id])
+
+  createdAt     DateTime          @default(now())
+
+  @@index([productId, createdAt])
+  @@index([type, createdAt])
 }
 
 model Transaction {

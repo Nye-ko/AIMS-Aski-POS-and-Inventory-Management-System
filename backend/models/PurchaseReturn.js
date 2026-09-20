@@ -1,5 +1,6 @@
 const { prisma } = require('./Product');
 const { PurchasingError } = require('./PurchaseOrder');
+const { changeStock, StockError } = require('./stockLedger');
 
 // PR-YYYYMMDD-#### — date-stamped, uniqueness guaranteed by the row's own id
 const generatePrNumber = (id, date) => {
@@ -84,17 +85,6 @@ const PurchaseReturnModel = {
         };
       });
 
-      // Guarded decrement: never let a return push stock below zero, even if sales happen meanwhile.
-      for (const item of lineItems) {
-        const { count } = await tx.product.updateMany({
-          where: { id: item.productId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        });
-        if (count === 0) {
-          throw new PurchasingError(409, `Cannot return ${item.quantity} of "${item.productName}" — not enough currently in stock`);
-        }
-      }
-
       const created = await tx.purchaseReturn.create({
         data: {
           returnNo: `TEMP-${Date.now()}-${rrId}`,
@@ -108,9 +98,33 @@ const PurchaseReturnModel = {
         },
       });
 
+      const returnNo = generatePrNumber(created.id, created.createdAt);
+
+      // Guarded decrement (logged in the ledger): a return can never push stock below zero,
+      // even if sales happen meanwhile.
+      for (const item of lineItems) {
+        try {
+          await changeStock(tx, {
+            productId: item.productId,
+            delta: -item.quantity,
+            type: 'PURCHASE_RETURN',
+            reason: `Returned to supplier: ${cleanReason}`,
+            referenceType: 'PurchaseReturn',
+            referenceId: created.id,
+            referenceNo: returnNo,
+            userId: validCreatedById,
+          });
+        } catch (error) {
+          if (error instanceof StockError && error.code === 'INSUFFICIENT_STOCK') {
+            throw new PurchasingError(409, `Cannot return ${item.quantity} of "${item.productName}" — not enough currently in stock`);
+          }
+          throw error;
+        }
+      }
+
       return tx.purchaseReturn.update({
         where: { id: created.id },
-        data: { returnNo: generatePrNumber(created.id, created.createdAt) },
+        data: { returnNo },
         include: returnInclude,
       });
     });

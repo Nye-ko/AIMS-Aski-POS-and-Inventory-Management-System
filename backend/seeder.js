@@ -23,6 +23,7 @@ async function seedData() {
     await prisma.transactionItem.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.reconciliation.deleteMany();
+    await prisma.stockMovement.deleteMany();
     await prisma.product.deleteMany();
     await prisma.supplier.deleteMany();
     await prisma.user.deleteMany();
@@ -82,6 +83,15 @@ async function seedData() {
 
     await prisma.product.createMany({ data: productsData });
     const dbProducts = await prisma.product.findMany();
+    await prisma.stockMovement.createMany({
+      data: dbProducts.map((p) => ({
+        productId: p.id,
+        type: 'OPENING',
+        quantity: p.stock,
+        balanceAfter: p.stock,
+        reason: 'Opening balance (seed)',
+      })),
+    });
     console.log('Products seeded.');
 
     // 4. Seed 30 Days of Transactions & Reconciliations

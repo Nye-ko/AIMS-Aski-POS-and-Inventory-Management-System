@@ -11,7 +11,8 @@ const cors = require('cors');
 const cron = require('node-cron');
 
 // Import Models
-const { ProductModel, prisma } = require('./models/Product');
+const { ProductModel, ProductError, ADJUSTMENT_REASONS, prisma } = require('./models/Product');
+const { StockMovementModel, STOCK_MOVEMENT_TYPES } = require('./models/StockMovement');
 const TransactionModel = require('./models/Transaction');
 const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
@@ -208,20 +209,30 @@ app.get('/api/products', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP)
   }
 });
 
-// 2. Create New Product
+// Maps product/inventory failures onto HTTP: typed errors carry their own status, anything
+// unexpected is a generic 500.
+const sendProductError = (res, error, action) => {
+  console.error(`Error ${action}:`, error);
+  if (error instanceof ProductError) return res.status(error.status).json({ error: error.message });
+  return res.status(500).json({ error: `Failed to ${action}` });
+};
+
+// 2. Create New Product (any starting stock is logged as an OPENING movement)
 app.post('/api/products', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const product = await ProductModel.create(req.body);
+    const product = await ProductModel.create(req.body, req.user.id);
     res.status(201).json(product);
   } catch (error) {
-    console.error('Error creating product:', error);
-    res.status(500).json({ error: 'Failed to create product' });
+    sendProductError(res, error, 'create product');
   }
 });
 
-// 2b. Update a product (currently used to set expiry, minStock, etc.)
+// 2b. Update a product (expiry, minStock, prices, codes...). Stock only moves through the ledger routes.
 app.patch('/api/products/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
+    if (req.body.stock !== undefined || req.body.currentStock !== undefined) {
+      return res.status(400).json({ error: 'Stock cannot be edited directly. Use add-stock or adjust-stock so the change is logged.' });
+    }
     const { before, after } = await ProductModel.update(req.params.id, req.body);
     if (!after) return res.status(404).json({ error: 'Product not found' });
     res.json(after);
@@ -234,23 +245,59 @@ app.patch('/api/products/:id', authenticateToken, requireRole(...ROLES.INVENTORY
       }
     }
   } catch (error) {
-    console.error('Product update error:', error);
-    res.status(500).json({ error: 'Failed to update product' });
+    sendProductError(res, error, 'update product');
   }
 });
 
-// 3. Update Product Stock (Add Stock)
+// 3. Add Stock (logged as MANUAL_ADD)
 app.patch('/api/products/:id/add-stock', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { quantity, supplierId } = req.body;
-    if (!quantity || isNaN(quantity)) {
-      return res.status(400).json({ error: 'Valid stock quantity is required' });
-    }
-    const updatedProduct = await ProductModel.addStock(req.params.id, quantity, supplierId);
+    const updatedProduct = await ProductModel.addStock(req.params.id, quantity, supplierId, req.user.id);
     res.json(updatedProduct);
   } catch (error) {
-    console.error('Error updating stock:', error);
-    res.status(500).json({ error: 'Failed to update stock' });
+    sendProductError(res, error, 'update stock');
+  }
+});
+
+// 3b. Manual stock correction with a required reason (logged as ADJUSTMENT)
+app.post('/api/products/:id/adjust-stock', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const { quantityChange, countedQuantity, reason, notes } = req.body;
+    const updatedProduct = await ProductModel.adjustStock(req.params.id, { quantityChange, countedQuantity, reason, notes }, req.user.id);
+    res.json(updatedProduct);
+  } catch (error) {
+    sendProductError(res, error, 'adjust stock');
+  }
+});
+
+// 3c. Allowed adjustment reasons, so the UI never hard-codes the list
+app.get('/api/stock-adjustment-reasons', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), (req, res) => {
+  res.json(ADJUSTMENT_REASONS);
+});
+
+// 3d. Stock movement ledger (newest first). Filters: productId, type, from, to (dates), limit, before (last id loaded).
+app.get('/api/stock-movements', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    if (req.query.type && !STOCK_MOVEMENT_TYPES.includes(req.query.type)) {
+      return res.status(400).json({ error: `type must be one of: ${STOCK_MOVEMENT_TYPES.join(', ')}` });
+    }
+    res.json(await StockMovementModel.findAll(req.query));
+  } catch (error) {
+    console.error('Error fetching stock movements:', error);
+    res.status(500).json({ error: 'Failed to fetch stock movements' });
+  }
+});
+
+// 3e. One product's movement history
+app.get('/api/products/:id/movements', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!productId) return res.status(400).json({ error: 'Invalid product id' });
+    res.json(await StockMovementModel.findAll({ ...req.query, productId }));
+  } catch (error) {
+    console.error('Error fetching product movements:', error);
+    res.status(500).json({ error: 'Failed to fetch product movements' });
   }
 });
 

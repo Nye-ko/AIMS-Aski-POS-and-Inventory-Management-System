@@ -17,17 +17,26 @@ import {
   LayoutGrid,
   Sprout, Leaf, Wheat, SprayCan, Wrench,
   Pill, PaintBucket, ShoppingBag, Milk, Palette, Coffee,
-  Soup, Cylinder
+  Soup, Cylinder,
+  History, SlidersHorizontal
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import PurchaseOrdersList from './PurchaseOrdersList';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
+import StockHistoryModal from './StockHistoryModal';
+import AdjustStockModal from './AdjustStockModal';
 
 import { apiFetch } from '../../auth/apiFetch';
 import { useAuth } from '../../auth/AuthContext';
 
 const API_BASE_URL = 'http://localhost:5000/api';
+
+// Surface the server's own error message (e.g. "Barcode ... is already used by ...") instead of a bare status.
+const throwApiError = async (response) => {
+  const body = await response.json().catch(() => ({}));
+  throw new Error(body.error || `HTTP error status ${response.status}`);
+};
 
 // Same category -> icon mapping as cashierPOS.jsx, so a product shows the
 // identical glyph whether viewed at the register or in inventory.
@@ -324,6 +333,8 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
   const canWrite = role === 'ADMIN' || role === 'INVENTORY';
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
+  const [historyProduct, setHistoryProduct] = useState(null);
+  const [adjustProduct, setAdjustProduct] = useState(null);
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
   const [isReceivingReportOpen, setIsReceivingReportOpen] = useState(false);
   const [isPurchaseReturnOpen, setIsPurchaseReturnOpen] = useState(false);
@@ -371,8 +382,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     currentStock: '',
     minStock: '',
     unitCost: '',
-    sellingPrice: '',
-    batchDate: ''
+    sellingPrice: ''
   });
 
   const [stockSearchQuery, setStockSearchQuery] = useState('');
@@ -394,7 +404,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
   };
 
   const handleClearForm = () => {
-    setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
+    setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '' });
   };
 
   const handleAddProduct = async (e) => {
@@ -414,7 +424,6 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         minStock: Number(formData.minStock) || 10,
         unitCost: Number(formData.unitCost) || 0,
         sellingPrice: Number(formData.sellingPrice) || 0,
-        batchDate: formData.batchDate || new Date().toISOString().split('T')[0],
         supplierId: Number(formData.supplierId)
       };
 
@@ -424,12 +433,12 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) throw new Error(`HTTP error status ${response.status}`);
+      if (!response.ok) await throwApiError(response);
 
       const savedProduct = await response.json();
 
       setProducts(prev => [savedProduct, ...prev]);
-      setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
+      setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '' });
       setIsFormOpen(false);
     } catch (err) {
       alert(`Error saving product: ${err.message}`);
@@ -475,7 +484,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         })
       });
 
-      if (!response.ok) throw new Error(`HTTP error status ${response.status}`);
+      if (!response.ok) await throwApiError(response);
 
       const updatedProduct = await response.json();
 
@@ -939,6 +948,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                 <th className="px-4 py-3.5 text-center">Price</th>
                 <th className="px-4 py-3.5 text-center">Expiry</th>
                 <th className="px-4 py-3.5 text-right">Status</th>
+                <th className="px-4 py-3.5 text-right">Ledger</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -998,11 +1008,33 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                         {statusText}
                       </span>
                     </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setHistoryProduct(p)}
+                        title="Stock history"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-[11px] font-bold cursor-pointer"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        History
+                      </button>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          onClick={() => setAdjustProduct(p)}
+                          title="Adjust stock"
+                          className="ml-1.5 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-[11px] font-bold cursor-pointer"
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                          Adjust
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan="9" className="px-4 py-10 text-center text-slate-400 font-semibold">
+                  <td colSpan="10" className="px-4 py-10 text-center text-slate-400 font-semibold">
                     No products found.
                   </td>
                 </tr>
@@ -1011,6 +1043,16 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
           </table>
         </div>
       </div>
+
+      {historyProduct && <StockHistoryModal key={historyProduct.id} product={historyProduct} onClose={() => setHistoryProduct(null)} />}
+      {adjustProduct && (
+        <AdjustStockModal
+          key={adjustProduct.id}
+          product={adjustProduct}
+          onClose={() => setAdjustProduct(null)}
+          onAdjusted={(updated) => setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+        />
+      )}
 
       <PurchaseOrdersList
         isOpen={isPurchaseOrderOpen}
