@@ -13,8 +13,8 @@ class CheckoutError extends Error {
 
 const toCents = (value) => Math.round(Number(value) * 100);
 
-// The client sends "Cash" / "Card" / "E-wallet"; the database enum spells the last one E_Wallet.
-const PAYMENT_METHODS = { CASH: 'CASH', CARD: 'CARD', E_WALLET: 'E_Wallet', EWALLET: 'E_Wallet' };
+// The client sends "Cash" / "Card" / "E-wallet"; the database enum spells the last one E_wallet.
+const PAYMENT_METHODS = { CASH: 'CASH', CARD: 'CARD', E_WALLET: 'E_wallet', EWALLET: 'E_wallet' };
 const normalizePaymentMethod = (value) => {
   const key = String(value || 'CASH').toUpperCase().replace(/[\s-]+/g, '_');
   const method = PAYMENT_METHODS[key];
