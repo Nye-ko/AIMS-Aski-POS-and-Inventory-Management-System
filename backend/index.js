@@ -17,6 +17,7 @@ const TransactionModel = require('./models/Transaction');
 const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
 const DemandForecastModel = require('./models/DemandForecast');
+const ForecastAccuracyModel = require('./models/ForecastAccuracy');
 const FinanceModel = require('./models/FinanceModel');
 const { PurchaseOrderModel, PurchasingError } = require('./models/PurchaseOrder');
 const { buildPurchaseOrderWorkbook } = require('./services/purchaseOrderExcel');
@@ -39,6 +40,7 @@ const mailer = require('./services/mailer');
 const lowStockAlerts = require('./services/lowStockAlerts');
 const expiryAlerts = require('./services/expiryAlerts');
 const forecastAlerts = require('./services/forecastAlerts');
+const forecastSnapshots = require('./services/forecastSnapshots');
 const receiptPrinter = require('./services/receiptPrinter');
 const posApproval = require('./services/posApproval');
 
@@ -740,6 +742,8 @@ app.get('/api/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), asy
       return res.status(400).json({ success: false, message: 'asOf must be a date like 2026-09-21.' });
     }
     const forecastData = await DemandForecastModel.getForecastData(days, { asOf });
+    // Keep a copy of today's forecast so it can be graded later (no-op after the first request of the day).
+    if (asOf === undefined) forecastSnapshots.saveFromRequest(forecastData);
 
     res.json({
       success: true,
@@ -892,6 +896,16 @@ app.post('/api/alerts/expiry/send-now', authenticateToken, requireRole(...ROLES.
   }
 });
 
+// Forecast accuracy: saved forecasts graded against real sales (live) plus the AI service's backtest.
+app.get('/api/forecast/accuracy', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
+  try {
+    res.json({ success: true, data: await ForecastAccuracyModel.getAccuracy() });
+  } catch (error) {
+    console.error('Error computing forecast accuracy:', error);
+    res.status(500).json({ success: false, message: 'Failed to compute forecast accuracy' });
+  }
+});
+
 // --- FORECAST DIGEST ROUTES ---
 
 app.post('/api/alerts/forecast/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
@@ -957,8 +971,32 @@ function startDailyDigestCron() {
   );
 }
 
+// Saves the forecast for the day that just began (from the complete previous day) so it can be graded
+// later. Independent of SMTP; a missed run is caught up by the first forecast request of the day.
+function startForecastSnapshotCron() {
+  const expr = process.env.FORECAST_SNAPSHOT_CRON || '5 0 * * *';
+  if (!cron.validate(expr)) {
+    console.error(`[forecast] invalid FORECAST_SNAPSHOT_CRON="${expr}" — nightly snapshot not scheduled.`);
+    return;
+  }
+  cron.schedule(
+    expr,
+    async () => {
+      try {
+        const result = await forecastSnapshots.saveToday();
+        console.log('[forecast] nightly snapshot:', result.saved ? `saved ${result.items} products` : result.reason);
+      } catch (err) {
+        console.error('[forecast] nightly snapshot failed:', err.message);
+      }
+    },
+    { timezone: DemandForecastModel.STORE_TIMEZONE },
+  );
+  console.log(`[forecast] nightly snapshot scheduled with cron "${expr}" (tz=${DemandForecastModel.STORE_TIMEZONE})`);
+}
+
 server.listen(PORT, async () => {
   console.log(`🚀 POS Server running on http://localhost:${PORT}`);
+  startForecastSnapshotCron();
   const smtpOk = await mailer.verifyMailer();
   if (smtpOk) {
     startDailyDigestCron();

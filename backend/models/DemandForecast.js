@@ -1,6 +1,7 @@
 const { prisma } = require('./Product');
 const axios = require('axios');
 const { buildForecast } = require('../services/forecastEngine');
+const { loadDailySales } = require('./salesHistory');
 
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || 'http://localhost:8000/api/v1/forecast';
 const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS) || 15000;
@@ -37,28 +38,12 @@ const loadForecastInput = async (daysToForecast, asOf) => {
   // Coarse UTC lower bound (a couple of days of slack); the engine applies the exact window.
   const lowerBound = new Date(Date.parse(`${asOf}T00:00:00Z`) - (HISTORY_DAYS + 2) * MS_PER_DAY);
 
-  const [products, salesRows, totalRows] = await Promise.all([
+  const [products, { salesRows, totalRows }] = await Promise.all([
     prisma.product.findMany({
       select: { id: true, sku: true, name: true, category: true, stock: true, minStock: true, expiryDate: true, createdAt: true },
       orderBy: { id: 'asc' },
     }),
-    prisma.$queryRaw`
-      SELECT ti."productId" AS "productId",
-             to_char((t."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}::text, 'YYYY-MM-DD') AS "date",
-             SUM(ti.quantity)::int AS "quantity",
-             SUM(ti.subtotal)::float AS "revenue"
-      FROM "TransactionItem" ti
-      JOIN "Transaction" t ON t.id = ti."transactionId"
-      WHERE t."createdAt" >= ${lowerBound}
-      GROUP BY 1, 2`,
-    prisma.$queryRaw`
-      SELECT to_char((t."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}::text, 'YYYY-MM-DD') AS "date",
-             SUM(t.subtotal)::float AS "gross",
-             SUM(t."discountAmount")::float AS "discount",
-             SUM(t."totalAmount")::float AS "net"
-      FROM "Transaction" t
-      WHERE t."createdAt" >= ${lowerBound}
-      GROUP BY 1`,
+    loadDailySales({ since: lowerBound, timeZone }),
   ]);
 
   const skuById = new Map();
@@ -118,4 +103,4 @@ const getForecastData = async (days = 30, { asOf } = {}) => {
   }
 };
 
-module.exports = { getForecastData };
+module.exports = { getForecastData, loadForecastInput, STORE_TIMEZONE, HISTORY_DAYS, PYTHON_AI_URL, localDate };

@@ -4,6 +4,7 @@ from typing import Annotated, List, Optional
 from fastapi import FastAPI
 from pydantic import AfterValidator, BaseModel, Field
 
+from backtest import MAX_ORIGINS, run_backtest
 from forecast_engine import ENGINE_NAME, ENGINE_VERSION, build_forecast
 
 app = FastAPI(title="AMPC POS AI Forecasting Microservice")
@@ -56,6 +57,10 @@ class ForecastRequest(BaseModel):
     dailyTotals: List[DailyTotalInput] = []
 
 
+class BacktestRequest(ForecastRequest):
+    maxOrigins: int = Field(default=MAX_ORIGINS, ge=1, le=120)
+
+
 @app.get("/health")
 def health_check():
     return {
@@ -69,5 +74,14 @@ def health_check():
 @app.post("/api/v1/forecast")
 def generate_forecast(payload: ForecastRequest):
     result = build_forecast(payload.model_dump(), source="ai-service")
+    result["meta"]["generatedAt"] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+@app.post("/api/v1/backtest")
+def backtest(payload: BacktestRequest):
+    """Replays the forecast engine over past days and grades it against what actually sold."""
+    data = payload.model_dump()
+    result = run_backtest(data, max_origins=data["maxOrigins"])
     result["meta"]["generatedAt"] = datetime.now(timezone.utc).isoformat()
     return result

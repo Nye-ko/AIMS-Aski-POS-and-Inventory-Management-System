@@ -9,7 +9,8 @@ import {
   RefreshCw,
   Calendar,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Target
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -21,11 +22,127 @@ import {
   CartesianGrid
 } from 'recharts';
 
+const pct = (x) => `${Math.round(x * 100)}%`;
+
+const VERDICTS = {
+  better: { label: 'Beats a simple guess', cls: 'bg-emerald-500/10 text-emerald-700 border-emerald-300/40' },
+  similar: { label: 'About the same as a simple guess', cls: 'bg-slate-500/10 text-slate-600 border-slate-300/40' },
+  worse: { label: 'Worse than a simple guess', cls: 'bg-rose-500/10 text-rose-700 border-rose-300/40' },
+  insufficient: { label: 'Not enough history yet', cls: 'bg-slate-500/10 text-slate-500 border-slate-300/40' },
+};
+
+function biasText(bias) {
+  if (bias == null) return null;
+  if (Math.abs(bias) < 0.03) return 'no consistent lean';
+  return bias < 0 ? `runs ${pct(-bias)} too low` : `runs ${pct(bias)} too high`;
+}
+
+function AccuracyTile({ title, metric, needs }) {
+  const verdict = VERDICTS[metric?.verdict] || VERDICTS.insufficient;
+  const hasData = metric && metric.n > 0 && metric.model?.wape != null;
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{title}</p>
+      {hasData ? (
+        <>
+          <p className="mt-1 text-2xl font-black text-slate-800">
+            {pct(metric.model.wape)} <span className="text-xs font-semibold text-slate-500">average miss</span>
+          </p>
+          <p className="text-[11px] text-slate-500">
+            {biasText(metric.model.bias)}
+            {metric.baseline?.wape != null && <> · simple guess misses {pct(metric.baseline.wape)}</>}
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-sm font-semibold text-slate-500">{needs || 'No graded forecasts yet'}</p>
+      )}
+      <span className={`mt-2 inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${verdict.cls}`}>
+        {verdict.label}
+      </span>
+    </div>
+  );
+}
+
+function AccuracyCard({ accuracy, failed }) {
+  if (failed) {
+    return (
+      <div className="rounded-3xl border border-slate-200/80 bg-white px-5 py-4 text-xs text-slate-500 shadow-sm">
+        Forecast accuracy is unavailable right now.
+      </div>
+    );
+  }
+  if (!accuracy) {
+    return (
+      <div className="rounded-3xl border border-slate-200/80 bg-white px-5 py-4 text-xs text-slate-500 shadow-sm">
+        Checking forecast accuracy…
+      </div>
+    );
+  }
+
+  const { backtest, live } = accuracy;
+  const btOk = backtest?.available;
+  const observed = btOk ? backtest.meta?.observedDays : null;
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-slate-100 px-5 py-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-sm shadow-blue-500/30">
+          <Target className="h-4 w-4 text-white" />
+        </div>
+        <div>
+          <h2 className="text-xs font-black uppercase tracking-wide text-slate-800">Forecast Accuracy</h2>
+          <p className="text-[11px] text-slate-500">
+            How far past forecasts were from what actually sold, compared with a simple guess (&ldquo;same as the previous period&rdquo;)
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-5">
+        {btOk ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <AccuracyTile title="Product demand · next 7 days" metric={backtest.units7} />
+              <AccuracyTile title="Store revenue · next 7 days" metric={backtest.revenue7} />
+              <AccuracyTile title="Store revenue · next 30 days" metric={backtest.revenue30} needs="Needs about 60 days of history" />
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Replayed over {backtest.meta.originsUsed} past days
+              {backtest.meta.firstOrigin && <> ({backtest.meta.firstOrigin} to {backtest.meta.lastOrigin})</>} using {observed} days of sales history.
+              {observed < 60 && ' That is a short record, so treat these as a rough guide.'}
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-amber-700">{backtest?.reason || 'The backtest is not available.'}</p>
+        )}
+
+        <div className="rounded-2xl border border-slate-200/80 px-4 py-3 text-[11px] text-slate-600">
+          <span className="font-bold text-slate-700">Saved forecasts, graded live: </span>
+          {live?.meta?.snapshotsGraded > 0 ? (
+            <>
+              {live.meta.snapshotsGraded} graded of {live.meta.snapshotsSaved} saved.
+              {live.units7?.model?.wape != null && <> Product demand misses {pct(live.units7.model.wape)} ({biasText(live.units7.model.bias)}).</>}
+              {live.revenue7?.model?.wape != null && <> Weekly revenue misses {pct(live.revenue7.model.wape)}.</>}
+            </>
+          ) : (
+            <>
+              {live?.meta?.snapshotsSaved > 0
+                ? `${live.meta.snapshotsSaved} saved so far; grading starts once a saved forecast has 7 completed days.`
+                : 'One forecast is saved each day; grading starts once the first has 7 completed days.'}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Demand() {
   const [demandMode, setDemandMode] = useState('current'); // 'current' (30 days) | 'future' (60 days)
   const [forecast, setForecast] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [accuracy, setAccuracy] = useState(null);
+  const [accuracyFailed, setAccuracyFailed] = useState(false);
   const fetchForecast = async () => {
     setLoading(true);
     setError(null);
@@ -50,6 +167,24 @@ export default function Demand() {
   useEffect(() => {
     fetchForecast();
   }, [demandMode]);
+
+  // Accuracy does not depend on the 30/60-day toggle, so it loads once and never blocks the page.
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get('http://localhost:5000/api/forecast/accuracy', { headers: authHeader() })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.data.success) setAccuracy(res.data.data);
+        else setAccuracyFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setAccuracyFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -83,6 +218,7 @@ export default function Demand() {
   const growthKnown = !!kpis.grossGrowth && kpis.grossGrowth !== 'n/a';
   const growthDown = growthKnown && String(kpis.grossGrowth).startsWith('-');
   const horizonDays = kpis.horizonDays || (demandMode === 'future' ? 60 : 30);
+  const skuError = new Map(((accuracy?.backtest?.available && accuracy.backtest.perSku) || []).map((r) => [r.sku, r]));
 
   return (
     <div className="space-y-6">
@@ -226,6 +362,8 @@ export default function Demand() {
         </div>
       </div>
 
+      <AccuracyCard accuracy={accuracy} failed={accuracyFailed} />
+
       {/* REVENUE TRAJECTORY GRAPH */}
       <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2.5">
@@ -289,6 +427,7 @@ export default function Demand() {
                 <th className="px-4 py-3.5 text-center">Daily Demand</th>
                 <th className="px-4 py-3.5 text-center">7-Day Target</th>
                 <th className="px-4 py-3.5 text-center">{horizonDays}-Day Demand</th>
+                <th className="px-4 py-3.5 text-center" title="How far past 7-day forecasts for this product were from what sold (backtest)">7-Day Miss</th>
                 <th className="px-4 py-3.5 text-center">Suggested Reorder</th>
                 <th className="px-4 py-3.5 text-right">Status</th>
               </tr>
@@ -309,6 +448,16 @@ export default function Demand() {
                   <td className="px-4 py-3.5 text-center">{item.dailyDemand} / day</td>
                   <td className="px-4 py-3.5 text-center">{item.forecast7Day}</td>
                   <td className="px-4 py-3.5 text-center">{item.forecastHorizon}</td>
+                  <td
+                    className="px-4 py-3.5 text-center text-slate-600"
+                    title={
+                      skuError.get(item.sku)?.wape != null
+                        ? `Simple guess: ${pct(skuError.get(item.sku).baselineWape ?? 0)} · ${skuError.get(item.sku).n} past forecasts`
+                        : 'Not enough sales history to grade'
+                    }
+                  >
+                    {skuError.get(item.sku)?.wape != null ? pct(skuError.get(item.sku).wape) : '—'}
+                  </td>
                   <td className="px-4 py-3.5 text-center font-bold text-blue-600">
                     {item.reorderQty > 0 ? `+${item.reorderQty}` : '0'}
                   </td>

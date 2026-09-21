@@ -340,3 +340,33 @@ model AuditLog {
   @@index([action, createdAt])
   @@index([targetUserId, createdAt])
 }
+
+// A forecast as the system stated it on one store-local day, kept so it can be graded against what
+// actually sold. Deliberately no foreign keys to Product: this is history and must survive product
+// changes; the seeder clears it together with the sales it was graded against.
+model ForecastSnapshot {
+  id            Int                    @id @default(autoincrement())
+  asOf          DateTime               @db.Date // store-local "today"; the forecast used sales up to the day before
+  model         String                 // engine@version, e.g. rate-mean@1.0.0
+  source        String                 // ai-service | fallback
+  revenue7      Decimal                @db.Decimal(12, 2) // forecast gross revenue, first 7 days from asOf
+  revenue30     Decimal                @db.Decimal(12, 2) // forecast gross revenue, first 30 days from asOf
+  createdAt     DateTime               @default(now())
+
+  items         ForecastSnapshotItem[]
+
+  @@unique([asOf, model])
+}
+
+model ForecastSnapshotItem {
+  id           Int              @id @default(autoincrement())
+  snapshotId   Int
+  snapshot     ForecastSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  productId    Int
+  sku          String
+  forecast7    Float            // forecast units over the 7 days from asOf
+  confidence   String
+
+  @@unique([snapshotId, productId])
+}

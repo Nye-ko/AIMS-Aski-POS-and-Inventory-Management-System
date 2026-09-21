@@ -280,4 +280,13 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
   };
 }
 
-module.exports = { buildForecast, ENGINE_NAME, ENGINE_VERSION, STATUS_OK, STATUS_REORDER, STATUS_EXPIRY };
+module.exports = {
+  buildForecast,
+  ENGINE_NAME,
+  ENGINE_VERSION,
+  STATUS_OK,
+  STATUS_REORDER,
+  STATUS_EXPIRY,
+  dayNumber: day,
+  isoFromDay: toIso,
+};

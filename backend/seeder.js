@@ -24,6 +24,7 @@ async function seedData() {
     await prisma.transaction.deleteMany();
     await prisma.reconciliation.deleteMany();
     await prisma.stockMovement.deleteMany();
+    await prisma.forecastSnapshot.deleteMany(); // saved forecasts refer to the sales being wiped
     await prisma.product.deleteMany();
     await prisma.supplier.deleteMany();
     await prisma.user.deleteMany();
