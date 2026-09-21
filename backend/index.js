@@ -11,27 +11,38 @@ const cors = require('cors');
 const cron = require('node-cron');
 
 // Import Models
-const { ProductModel, prisma } = require('./models/Product');
+const { ProductModel, ProductError, ADJUSTMENT_REASONS, prisma } = require('./models/Product');
+const { StockMovementModel, STOCK_MOVEMENT_TYPES } = require('./models/StockMovement');
 const TransactionModel = require('./models/Transaction');
 const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
 const DemandForecastModel = require('./models/DemandForecast');
+const ForecastAccuracyModel = require('./models/ForecastAccuracy');
 const FinanceModel = require('./models/FinanceModel');
-const { PurchaseOrderModel } = require('./models/PurchaseOrder');
+const { PurchaseOrderModel, PurchasingError } = require('./models/PurchaseOrder');
 const { buildPurchaseOrderWorkbook } = require('./services/purchaseOrderExcel');
 const { ReceivingReportModel } = require('./models/ReceivingReport');
 const { buildReceivingReportWorkbook } = require('./services/receivingReportExcel');
 const { PurchaseReturnModel } = require('./models/PurchaseReturn');
 const { buildPurchaseReturnWorkbook } = require('./services/purchaseReturnExcel');
-const { AuthModel, authenticateToken, STALE_SESSION_ERROR } = require('./models/Auth');
-const { UserModel } = require('./models/User');
+const {
+  AuthModel,
+  authenticateToken,
+  requireRole,
+  authenticateSocketToken,
+  STALE_SESSION_ERROR,
+} = require('./models/Auth');
+const { UserModel, UserError } = require('./models/User');
+const { AuditLogModel, AUDIT_ACTIONS } = require('./models/AuditLog');
 
 // Import Services
 const mailer = require('./services/mailer');
 const lowStockAlerts = require('./services/lowStockAlerts');
 const expiryAlerts = require('./services/expiryAlerts');
 const forecastAlerts = require('./services/forecastAlerts');
+const forecastSnapshots = require('./services/forecastSnapshots');
 const receiptPrinter = require('./services/receiptPrinter');
+const posApproval = require('./services/posApproval');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -39,6 +50,16 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+// Any successful write (a sale, a stock change, a purchase order, a supplier edit...) makes the cached
+// forecast out of date, so the next forecast request recomputes.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    res.on('finish', () => {
+      if (res.statusCode < 400) DemandForecastModel.invalidateForecastCache();
+    });
+  }
+  next();
+});
 
 const server = http.createServer(app);
 
@@ -51,7 +72,35 @@ const io = new Server(server, {
 
 app.set('io', io);
 
+// Only logged-in, active users may open a socket. Finance broadcasts go to a
+// role-scoped room so cashiers/inventory staff never receive them.
+io.use(async (socket, next) => {
+  const user = await authenticateSocketToken(socket.handshake.auth && socket.handshake.auth.token);
+  if (!user) return next(new Error('Authentication required.'));
+  socket.data.user = user;
+  next();
+});
+
+// Role groups shared by the route guards below (ADMIN is always allowed by requireRole).
+const ROLES = {
+  POS: ['CASHIER', 'SUPERVISOR'],
+  DASHBOARD: ['SUPERVISOR', 'INVENTORY', 'ACCOUNTING'],
+  INVENTORY_READ: ['SUPERVISOR', 'INVENTORY'],
+  INVENTORY_WRITE: ['INVENTORY'],
+  PRODUCT_LOOKUP: ['CASHIER', 'SUPERVISOR', 'INVENTORY'],
+  FORECAST: ['INVENTORY', 'ACCOUNTING'],
+  FINANCE: ['ACCOUNTING'],
+  RECONCILIATION_WRITE: ['CASHIER', 'SUPERVISOR', 'ACCOUNTING'],
+  RECONCILIATION_READ: ['SUPERVISOR', 'ACCOUNTING'],
+};
+
+const FINANCE_ROOM = 'finance';
+const DASHBOARD_ROOM = 'dashboard';
+
 io.on('connection', (socket) => {
+  const { role } = socket.data.user;
+  if (role === 'ADMIN' || ROLES.FINANCE.includes(role)) socket.join(FINANCE_ROOM);
+  if (role === 'ADMIN' || ROLES.DASHBOARD.includes(role)) socket.join(DASHBOARD_ROOM);
   console.log('Client connected to WebSocket:', socket.id);
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
@@ -67,7 +116,19 @@ app.post('/api/auth/login', async (req, res) => {
     const result = await AuthModel.login(username, password);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ error: error.message || 'Login failed' });
+    res.status(error.status || 401).json({ error: error.message || 'Login failed' });
+  }
+});
+
+// Self-service password change (any signed-in user). Requires the current password.
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    await UserModel.changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
+    res.json({ changed: true });
+  } catch (error) {
+    if (!(error instanceof UserError)) console.error('Error changing password:', error);
+    const known = error instanceof UserError;
+    res.status(known ? error.status : 500).json({ error: known ? error.message : 'Failed to change password' });
   }
 });
 
@@ -86,7 +147,7 @@ app.post('/api/auth/verify-password', authenticateToken, async (req, res) => {
     await AuthModel.verifyPassword(req.user.id, req.body.password);
     res.json({ valid: true });
   } catch (error) {
-    res.status(401).json({ error: error.message || 'Invalid admin password. Access denied.' });
+    res.status(error.status || 401).json({ error: error.message || 'Invalid admin password. Access denied.' });
   }
 });
 
@@ -112,7 +173,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { fullName, username, password, role } = req.body;
-    const user = await UserModel.create({ fullName, username, password, role });
+    const user = await UserModel.create({ fullName, username, password, role }, req.user);
     res.status(201).json(user);
   } catch (error) {
     console.error('Error creating user:', error);
@@ -122,7 +183,7 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 
 app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await UserModel.updateRole(req.params.id, req.body.role);
+    const user = await UserModel.updateRole(req.params.id, req.body.role, req.user);
     res.json(user);
   } catch (error) {
     console.error('Error updating user role:', error);
@@ -132,7 +193,7 @@ app.patch('/api/users/:id/role', authenticateToken, requireAdmin, async (req, re
 
 app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await UserModel.setActive(req.params.id, req.body.isActive);
+    const user = await UserModel.setActive(req.params.id, req.body.isActive, req.user);
     res.json(user);
   } catch (error) {
     console.error('Error updating user status:', error);
@@ -140,9 +201,21 @@ app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// Set (body: { pin: "1234" }) or clear (body: { pin: null }) a supervisor's POS approval PIN.
+app.put('/api/users/:id/pin', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pin = req.body.pin === null ? null : String(req.body.pin ?? '');
+    const user = await UserModel.setPin(req.params.id, pin, req.user);
+    res.json(user);
+  } catch (error) {
+    console.error('Error updating user PIN:', error);
+    res.status(400).json({ error: error.message || 'Failed to update PIN' });
+  }
+});
+
 app.post('/api/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const result = await UserModel.resetPassword(req.params.id);
+    const result = await UserModel.resetPassword(req.params.id, req.user);
     res.json(result);
   } catch (error) {
     console.error('Error resetting password:', error);
@@ -150,8 +223,21 @@ app.post('/api/users/:id/reset-password', authenticateToken, requireAdmin, async
   }
 });
 
+// Admin activity log (newest first). Filters: action, targetUserId, actorId, from, to (dates), limit, before (last id loaded).
+app.get('/api/audit-log', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (req.query.action && !AUDIT_ACTIONS.includes(req.query.action)) {
+      return res.status(400).json({ error: `action must be one of: ${AUDIT_ACTIONS.join(', ')}` });
+    }
+    res.json(await AuditLogModel.findAll(req.query));
+  } catch (error) {
+    console.error('Error fetching audit log:', error);
+    res.status(500).json({ error: 'Failed to fetch audit log' });
+  }
+});
+
 // 1. Get All Products (Includes supplier relations and computed status)
-app.get('/api/products', async (req, res) => {
+app.get('/api/products', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP), async (req, res) => {
   try {
     const products = await ProductModel.findAll();
     res.json(products);
@@ -161,20 +247,30 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// 2. Create New Product
-app.post('/api/products', async (req, res) => {
+// Maps product/inventory failures onto HTTP: typed errors carry their own status, anything
+// unexpected is a generic 500.
+const sendProductError = (res, error, action) => {
+  console.error(`Error ${action}:`, error);
+  if (error instanceof ProductError) return res.status(error.status).json({ error: error.message });
+  return res.status(500).json({ error: `Failed to ${action}` });
+};
+
+// 2. Create New Product (any starting stock is logged as an OPENING movement)
+app.post('/api/products', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const product = await ProductModel.create(req.body);
+    const product = await ProductModel.create(req.body, req.user.id);
     res.status(201).json(product);
   } catch (error) {
-    console.error('Error creating product:', error);
-    res.status(500).json({ error: 'Failed to create product' });
+    sendProductError(res, error, 'create product');
   }
 });
 
-// 2b. Update a product (currently used to set expiry, minStock, etc.)
-app.patch('/api/products/:id', async (req, res) => {
+// 2b. Update a product (expiry, minStock, prices, codes...). Stock only moves through the ledger routes.
+app.patch('/api/products/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
+    if (req.body.stock !== undefined || req.body.currentStock !== undefined) {
+      return res.status(400).json({ error: 'Stock cannot be edited directly. Use add-stock or adjust-stock so the change is logged.' });
+    }
     const { before, after } = await ProductModel.update(req.params.id, req.body);
     if (!after) return res.status(404).json({ error: 'Product not found' });
     res.json(after);
@@ -187,28 +283,64 @@ app.patch('/api/products/:id', async (req, res) => {
       }
     }
   } catch (error) {
-    console.error('Product update error:', error);
-    res.status(500).json({ error: 'Failed to update product' });
+    sendProductError(res, error, 'update product');
   }
 });
 
-// 3. Update Product Stock (Add Stock)
-app.patch('/api/products/:id/add-stock', async (req, res) => {
+// 3. Add Stock (logged as MANUAL_ADD)
+app.patch('/api/products/:id/add-stock', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { quantity, supplierId } = req.body;
-    if (!quantity || isNaN(quantity)) {
-      return res.status(400).json({ error: 'Valid stock quantity is required' });
-    }
-    const updatedProduct = await ProductModel.addStock(req.params.id, quantity, supplierId);
+    const updatedProduct = await ProductModel.addStock(req.params.id, quantity, supplierId, req.user.id);
     res.json(updatedProduct);
   } catch (error) {
-    console.error('Error updating stock:', error);
-    res.status(500).json({ error: 'Failed to update stock' });
+    sendProductError(res, error, 'update stock');
+  }
+});
+
+// 3b. Manual stock correction with a required reason (logged as ADJUSTMENT)
+app.post('/api/products/:id/adjust-stock', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const { quantityChange, countedQuantity, reason, notes } = req.body;
+    const updatedProduct = await ProductModel.adjustStock(req.params.id, { quantityChange, countedQuantity, reason, notes }, req.user.id);
+    res.json(updatedProduct);
+  } catch (error) {
+    sendProductError(res, error, 'adjust stock');
+  }
+});
+
+// 3c. Allowed adjustment reasons, so the UI never hard-codes the list
+app.get('/api/stock-adjustment-reasons', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), (req, res) => {
+  res.json(ADJUSTMENT_REASONS);
+});
+
+// 3d. Stock movement ledger (newest first). Filters: productId, type, from, to (dates), limit, before (last id loaded).
+app.get('/api/stock-movements', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    if (req.query.type && !STOCK_MOVEMENT_TYPES.includes(req.query.type)) {
+      return res.status(400).json({ error: `type must be one of: ${STOCK_MOVEMENT_TYPES.join(', ')}` });
+    }
+    res.json(await StockMovementModel.findAll(req.query));
+  } catch (error) {
+    console.error('Error fetching stock movements:', error);
+    res.status(500).json({ error: 'Failed to fetch stock movements' });
+  }
+});
+
+// 3e. One product's movement history
+app.get('/api/products/:id/movements', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!productId) return res.status(400).json({ error: 'Invalid product id' });
+    res.json(await StockMovementModel.findAll({ ...req.query, productId }));
+  } catch (error) {
+    console.error('Error fetching product movements:', error);
+    res.status(500).json({ error: 'Failed to fetch product movements' });
   }
 });
 
 // 4. Search Product by Barcode or 6-digit Code
-app.get('/api/products/barcode/:code', async (req, res) => {
+app.get('/api/products/barcode/:code', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP), async (req, res) => {
   try {
     const products = await ProductModel.findByBarcode(req.params.code);
     if (!products || products.length === 0) {
@@ -222,7 +354,7 @@ app.get('/api/products/barcode/:code', async (req, res) => {
 });
 
 // 5. Get All Suppliers (For inventory dropdowns)
-app.get('/api/suppliers', async (req, res) => {
+app.get('/api/suppliers', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
   try {
     const suppliers = await prisma.supplier.findMany({
       orderBy: { name: 'asc' },
@@ -234,30 +366,64 @@ app.get('/api/suppliers', async (req, res) => {
   }
 });
 
+// Days from placing an order with this supplier to receiving it; drives every product's reorder point.
+const MAX_LEAD_TIME_DAYS = 90;
+app.patch('/api/suppliers/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const leadTimeDays = Number(req.body.leadTimeDays);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid supplier id' });
+    if (!Number.isInteger(leadTimeDays) || leadTimeDays < 1 || leadTimeDays > MAX_LEAD_TIME_DAYS) {
+      return res.status(400).json({ error: `Lead time must be a whole number of days from 1 to ${MAX_LEAD_TIME_DAYS}` });
+    }
+    const existing = await prisma.supplier.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return res.status(404).json({ error: 'Supplier not found' });
+    const supplier = await prisma.supplier.update({ where: { id }, data: { leadTimeDays } });
+    res.json(supplier);
+  } catch (error) {
+    console.error('Error updating supplier:', error);
+    res.status(500).json({ error: 'Failed to update supplier' });
+  }
+});
+
 // --- PURCHASE ORDER ROUTES ---
 
-// Create a Purchase Order for one supplier from checked low-stock items
-app.post('/api/purchase-orders', authenticateToken, async (req, res) => {
+// Maps purchasing failures onto HTTP: typed errors carry their own status, a vanished session is 401,
+// anything unexpected is a generic 500.
+const sendPurchasingError = (res, error, action) => {
+  console.error(`Error ${action}:`, error);
+  if (error.message === STALE_SESSION_ERROR) return res.status(401).json({ error: error.message });
+  if (error instanceof PurchasingError) return res.status(error.status).json({ error: error.message });
+  return res.status(500).json({ error: `Failed to ${action}` });
+};
+
+// Create a Purchase Order (DRAFT or PENDING) for one supplier
+app.post('/api/purchase-orders', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { supplierId, items, terms, remarks, preparedBy } = req.body;
+    const { supplierId, supplierName, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging, status } = req.body;
     const purchaseOrder = await PurchaseOrderModel.create({
       supplierId,
+      supplierName,
       items,
       terms,
       remarks,
-      preparedBy,
+      discount,
+      shipTo,
+      shippingAddress,
+      purpose,
+      tagging,
+      status,
+      preparedBy: req.user.username,
       createdById: req.user.id,
     });
     res.status(201).json(purchaseOrder);
   } catch (error) {
-    console.error('Error creating purchase order:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to create purchase order' });
+    sendPurchasingError(res, error, 'create purchase order');
   }
 });
 
 // Download the styled .xlsx for a saved Purchase Order
-app.get('/api/purchase-orders/:id/export', async (req, res) => {
+app.get('/api/purchase-orders/:id/export', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseOrder = await PurchaseOrderModel.findById(req.params.id);
     if (!purchaseOrder) {
@@ -276,7 +442,7 @@ app.get('/api/purchase-orders/:id/export', async (req, res) => {
 });
 
 // Purchase Orders awaiting a Receiving Report
-app.get('/api/purchase-orders/pending', async (req, res) => {
+app.get('/api/purchase-orders/pending', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const pendingOrders = await PurchaseOrderModel.findPending();
     res.json(pendingOrders);
@@ -287,7 +453,7 @@ app.get('/api/purchase-orders/pending', async (req, res) => {
 });
 
 // All Purchase Orders, for the "Purchase Orders" browse window (optionally filtered by PO number)
-app.get('/api/purchase-orders', async (req, res) => {
+app.get('/api/purchase-orders', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseOrders = await PurchaseOrderModel.findAll(req.query.search);
     res.json(purchaseOrders);
@@ -298,7 +464,7 @@ app.get('/api/purchase-orders', async (req, res) => {
 });
 
 // A single Purchase Order, for the "Open" view/edit action
-app.get('/api/purchase-orders/:id', async (req, res) => {
+app.get('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseOrder = await PurchaseOrderModel.findById(req.params.id);
     if (!purchaseOrder) {
@@ -311,22 +477,60 @@ app.get('/api/purchase-orders/:id', async (req, res) => {
   }
 });
 
-// Delete a Purchase Order (blocked once a Receiving Report has been filed against it)
-app.delete('/api/purchase-orders/:id', authenticateToken, async (req, res) => {
+// Edit a DRAFT purchase order (header and items are replaced)
+app.put('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const { supplierId, supplierName, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging } = req.body;
+    const purchaseOrder = await PurchaseOrderModel.updateDraft(req.params.id, {
+      supplierId,
+      supplierName,
+      items,
+      terms,
+      remarks,
+      discount,
+      shipTo,
+      shippingAddress,
+      purpose,
+      tagging,
+    });
+    res.json(purchaseOrder);
+  } catch (error) {
+    sendPurchasingError(res, error, 'update purchase order');
+  }
+});
+
+// Submit a DRAFT so it becomes PENDING (receivable)
+app.post('/api/purchase-orders/:id/submit', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await PurchaseOrderModel.submit(req.params.id));
+  } catch (error) {
+    sendPurchasingError(res, error, 'submit purchase order');
+  }
+});
+
+// Cancel a DRAFT or PENDING purchase order
+app.post('/api/purchase-orders/:id/cancel', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await PurchaseOrderModel.cancel(req.params.id));
+  } catch (error) {
+    sendPurchasingError(res, error, 'cancel purchase order');
+  }
+});
+
+// Delete a DRAFT or CANCELLED purchase order
+app.delete('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     await PurchaseOrderModel.delete(req.params.id);
     res.status(204).end();
   } catch (error) {
-    console.error('Error deleting purchase order:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to delete purchase order' });
+    sendPurchasingError(res, error, 'delete purchase order');
   }
 });
 
 // --- RECEIVING REPORT ROUTES ---
 
 // File a Receiving Report against a pending Purchase Order (tops up stock/cost, closes the PO)
-app.post('/api/receiving-reports', authenticateToken, async (req, res) => {
+app.post('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { purchaseOrderId, items, deliveryNote, invoiceNo, remarks } = req.body;
     const receivingReport = await ReceivingReportModel.create({
@@ -339,14 +543,12 @@ app.post('/api/receiving-reports', authenticateToken, async (req, res) => {
     });
     res.status(201).json(receivingReport);
   } catch (error) {
-    console.error('Error creating receiving report:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to create receiving report' });
+    sendPurchasingError(res, error, 'create receiving report');
   }
 });
 
 // Download the styled .xlsx for a saved Receiving Report
-app.get('/api/receiving-reports/:id/export', async (req, res) => {
+app.get('/api/receiving-reports/:id/export', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const receivingReport = await ReceivingReportModel.findById(req.params.id);
     if (!receivingReport) {
@@ -365,7 +567,7 @@ app.get('/api/receiving-reports/:id/export', async (req, res) => {
 });
 
 // All Receiving Reports, for the "Create Purchase Return" picker
-app.get('/api/receiving-reports', async (req, res) => {
+app.get('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const receivingReports = await ReceivingReportModel.findAll();
     res.json(receivingReports);
@@ -376,7 +578,7 @@ app.get('/api/receiving-reports', async (req, res) => {
 });
 
 // A single Receiving Report, for the "View Receiving Report" action
-app.get('/api/receiving-reports/:id', async (req, res) => {
+app.get('/api/receiving-reports/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const receivingReport = await ReceivingReportModel.findById(req.params.id);
     if (!receivingReport) {
@@ -392,7 +594,7 @@ app.get('/api/receiving-reports/:id', async (req, res) => {
 // --- PURCHASE RETURN ROUTES ---
 
 // File a Purchase Return against a Receiving Report (decrements product stock)
-app.post('/api/purchase-returns', authenticateToken, async (req, res) => {
+app.post('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const { receivingReportId, items, reason, remarks } = req.body;
     const purchaseReturn = await PurchaseReturnModel.create({
@@ -404,14 +606,36 @@ app.post('/api/purchase-returns', authenticateToken, async (req, res) => {
     });
     res.status(201).json(purchaseReturn);
   } catch (error) {
-    console.error('Error creating purchase return:', error);
-    const status = error.message === STALE_SESSION_ERROR ? 401 : 400;
-    res.status(status).json({ error: error.message || 'Failed to create purchase return' });
+    sendPurchasingError(res, error, 'create purchase return');
+  }
+});
+
+// All Purchase Returns
+app.get('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await PurchaseReturnModel.findAll());
+  } catch (error) {
+    console.error('Error fetching purchase returns:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase returns' });
+  }
+});
+
+// A single Purchase Return
+app.get('/api/purchase-returns/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const purchaseReturn = await PurchaseReturnModel.findById(req.params.id);
+    if (!purchaseReturn) {
+      return res.status(404).json({ error: 'Purchase return not found' });
+    }
+    res.json(purchaseReturn);
+  } catch (error) {
+    console.error('Error fetching purchase return:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase return' });
   }
 });
 
 // Download the styled .xlsx for a saved Purchase Return
-app.get('/api/purchase-returns/:id/export', async (req, res) => {
+app.get('/api/purchase-returns/:id/export', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
     const purchaseReturn = await PurchaseReturnModel.findById(req.params.id);
     if (!purchaseReturn) {
@@ -429,17 +653,35 @@ app.get('/api/purchase-returns/:id/export', async (req, res) => {
   }
 });
 
+// --- POS SUPERVISOR APPROVAL ---
+
+// Exchanges a supervisor's PIN for a short-lived approval token. The token is bound to the
+// requesting cashier and action, and is presented back on checkout / X-Reading.
+app.post('/api/pos/approve', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
+  try {
+    const { pin, action, discountPercent } = req.body;
+    const result = await posApproval.requestApproval({ requester: req.user, pin, action, discountPercent });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof posApproval.ApprovalError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error('Approval error:', error);
+    res.status(500).json({ error: 'Failed to verify supervisor PIN' });
+  }
+});
+
 // --- TRANSACTIONS ROUTES ---
 
 // Create New Transaction (Checkout)
-app.post('/api/transactions', authenticateToken, async (req, res) => {
+app.post('/api/transactions', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
   try {
     const io = req.app.get('io');
     const result = await TransactionModel.createCheckout({ ...req.body, cashierId: req.user.id }, io);
 
     // Broadcast updated financial metrics over WebSocket
     const updatedFinance = await FinanceModel.getSummary();
-    io.emit('finance_updated', updatedFinance);
+    io.to(FINANCE_ROOM).emit('finance_updated', updatedFinance);
 
     res.status(201).json(result);
 
@@ -466,6 +708,9 @@ app.post('/api/transactions', authenticateToken, async (req, res) => {
       }
     }
   } catch (error) {
+    if (error instanceof TransactionModel.CheckoutError || error instanceof posApproval.ApprovalError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Transaction error:', error);
     if (error.message === STALE_SESSION_ERROR) {
       return res.status(401).json({ error: error.message });
@@ -476,7 +721,7 @@ app.post('/api/transactions', authenticateToken, async (req, res) => {
 
 // Silent on-demand print (used by the POS "Print" preview button, and for
 // reprints) — same printer path as the automatic post-checkout print above.
-app.post('/api/print/receipt', authenticateToken, async (req, res) => {
+app.post('/api/print/receipt', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
   try {
     const result = await receiptPrinter.printReceipt({ ...req.body, cashier: req.user.username });
     res.json(result);
@@ -487,7 +732,7 @@ app.post('/api/print/receipt', authenticateToken, async (req, res) => {
 });
 
 // Get All Transactions
-app.get('/api/transactions', async (req, res) => {
+app.get('/api/transactions', authenticateToken, requireRole(...ROLES.FINANCE), async (req, res) => {
   try {
     const transactions = await TransactionModel.findAll();
     res.json(transactions);
@@ -498,13 +743,14 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 // --- DASHBOARD ROUTE ---
-app.get('/api/dashboard/summary', async (req, res) => {
+app.get('/api/dashboard/summary', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
-    const [todayRevenue, lowStockCount, dailySalesTrend, expiryWatchList] = await Promise.all([
+    const [todayRevenue, lowStockCount, dailySalesTrend, expiryWatchList, recentTransactions] = await Promise.all([
       DashboardModel.getTodayRevenue(),
       DashboardModel.getLowStockCount(10), // Threshold = 10 items
       DashboardModel.getDailySalesTrend(),
       DashboardModel.getExpiryWatchList(30),
+      TransactionModel.findAll({ limit: 5 }),
     ]);
 
     res.json({
@@ -512,6 +758,7 @@ app.get('/api/dashboard/summary', async (req, res) => {
       lowStockCount,
       dailySalesTrend,
       expiryWatchList,
+      recentTransactions,
     });
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
@@ -520,10 +767,15 @@ app.get('/api/dashboard/summary', async (req, res) => {
 });
 
 // --- AI FORECASTING ROUTE ---
-app.get('/api/forecast', async (req, res) => {
+app.get('/api/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
-    const { days = 30 } = req.query;
-    const forecastData = await DemandForecastModel.getForecastData(days);
+    const { days = 30, asOf, refresh } = req.query;
+    if (asOf !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(asOf))) {
+      return res.status(400).json({ success: false, message: 'asOf must be a date like 2026-09-21.' });
+    }
+    const forecastData = await DemandForecastModel.getForecastData(days, { asOf, refresh: refresh === '1' || refresh === 'true' });
+    // Keep a copy of today's forecast so it can be graded later (no-op after the first request of the day).
+    if (asOf === undefined) forecastSnapshots.saveFromRequest(forecastData);
 
     res.json({
       success: true,
@@ -540,7 +792,7 @@ app.get('/api/forecast', async (req, res) => {
 });
 
 // --- FINANCE CONTROL ROUTE ---
-app.get('/api/finance/summary', async (req, res) => {
+app.get('/api/finance/summary', authenticateToken, requireRole(...ROLES.FINANCE), async (req, res) => {
   try {
     const data = await FinanceModel.getSummary();
     res.json(data);
@@ -552,12 +804,24 @@ app.get('/api/finance/summary', async (req, res) => {
 
 // --- RECONCILIATION ROUTES ---
 
-// Get Expected Cash for Today
-app.get('/api/reconciliation/expected-cash', async (req, res) => {
+// X-Reading needs a supervisor approval token (POST /api/pos/approve with action XREAD),
+// sent in the X-Approval-Token header.
+const sendApprovalOrReconError = (res, error) => {
+  if (error instanceof posApproval.ApprovalError || error instanceof ReconciliationModel.ReconciliationError) {
+    res.status(error.status).json({ error: error.message, code: error.code });
+    return true;
+  }
+  return false;
+};
+
+// Get today's X-Reading figures for the signed-in cashier
+app.get('/api/reconciliation/expected-cash', authenticateToken, requireRole(...ROLES.RECONCILIATION_WRITE), async (req, res) => {
   try {
-    const data = await ReconciliationModel.getExpectedCash();
+    await posApproval.verifyApproval(req.headers['x-approval-token'], { action: 'XREAD', cashierId: req.user.id });
+    const data = await ReconciliationModel.getExpectedCash(req.user.id);
     return res.status(200).json(data);
   } catch (error) {
+    if (sendApprovalOrReconError(res, error)) return;
     console.error('Error calculating expected cash:', error);
     return res.status(500).json({
       error: 'Failed to calculate expected cash',
@@ -567,18 +831,28 @@ app.get('/api/reconciliation/expected-cash', async (req, res) => {
   }
 });
 
-// Save End of Day Reconciliation
-app.post('/api/reconciliation', authenticateToken, async (req, res) => {
+// Save End of Day Reconciliation (one per cashier per day; all totals computed server-side)
+app.post('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCILIATION_WRITE), async (req, res) => {
   try {
-    const record = await ReconciliationModel.create({ ...req.body, cashierId: req.user.id });
+    const approval = await posApproval.verifyApproval(req.headers['x-approval-token'], {
+      action: 'XREAD',
+      cashierId: req.user.id,
+    });
+    const record = await ReconciliationModel.create({
+      denominations: req.body.denominations,
+      notes: req.body.notes,
+      cashierId: req.user.id,
+    });
+    posApproval.consumeApproval(approval);
 
     // Broadcast updated financial metrics over WebSocket
     const io = req.app.get('io');
     const updatedFinance = await FinanceModel.getSummary();
-    io.emit('finance_updated', updatedFinance);
+    io.to(FINANCE_ROOM).emit('finance_updated', updatedFinance);
 
     res.status(201).json({ message: 'Reconciliation Submitted', record });
   } catch (error) {
+    if (sendApprovalOrReconError(res, error)) return;
     console.error('Error creating reconciliation:', error);
     if (error.message === STALE_SESSION_ERROR) {
       return res.status(401).json({ error: error.message });
@@ -588,7 +862,7 @@ app.post('/api/reconciliation', authenticateToken, async (req, res) => {
 });
 
 // Get All Historical Reconciliations
-app.get('/api/reconciliation', async (req, res) => {
+app.get('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCILIATION_READ), async (req, res) => {
   try {
     const recons = await ReconciliationModel.findAll();
     res.json(recons);
@@ -600,7 +874,7 @@ app.get('/api/reconciliation', async (req, res) => {
 
 // --- ALERT ROUTES (low-stock and expiry emails) ---
 
-app.get('/api/alerts/low-stock', async (req, res) => {
+app.get('/api/alerts/low-stock', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const products = await lowStockAlerts.findCurrentlyLow();
     res.json({ count: products.length, products });
@@ -610,7 +884,7 @@ app.get('/api/alerts/low-stock', async (req, res) => {
   }
 });
 
-app.post('/api/alerts/low-stock/send-now', async (req, res) => {
+app.post('/api/alerts/low-stock/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   if (!mailer.isConfigured()) {
     return res.status(503).json({
       error: 'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_RECIPIENTS in backend/.env.',
@@ -625,7 +899,7 @@ app.post('/api/alerts/low-stock/send-now', async (req, res) => {
   }
 });
 
-app.get('/api/alerts/expiry', async (req, res) => {
+app.get('/api/alerts/expiry', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const products = await expiryAlerts.findExpiringSoon();
     res.json({
@@ -639,7 +913,7 @@ app.get('/api/alerts/expiry', async (req, res) => {
   }
 });
 
-app.post('/api/alerts/expiry/send-now', async (req, res) => {
+app.post('/api/alerts/expiry/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   if (!mailer.isConfigured()) {
     return res.status(503).json({
       error: 'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_RECIPIENTS in backend/.env.',
@@ -654,9 +928,19 @@ app.post('/api/alerts/expiry/send-now', async (req, res) => {
   }
 });
 
+// Forecast accuracy: saved forecasts graded against real sales (live) plus the AI service's backtest.
+app.get('/api/forecast/accuracy', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
+  try {
+    res.json({ success: true, data: await ForecastAccuracyModel.getAccuracy() });
+  } catch (error) {
+    console.error('Error computing forecast accuracy:', error);
+    res.status(500).json({ success: false, message: 'Failed to compute forecast accuracy' });
+  }
+});
+
 // --- FORECAST DIGEST ROUTES ---
 
-app.post('/api/alerts/forecast/send-now', async (req, res) => {
+app.post('/api/alerts/forecast/send-now', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   if (!mailer.isConfigured()) {
     return res.status(503).json({
       error: 'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_RECIPIENTS in backend/.env.',
@@ -672,7 +956,7 @@ app.post('/api/alerts/forecast/send-now', async (req, res) => {
   }
 });
 
-app.get('/api/alerts/forecast', async (req, res) => {
+app.get('/api/alerts/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
     const days = Number(req.query.days) || 30;
     const digest = await forecastAlerts.buildDigest(days);
@@ -719,8 +1003,32 @@ function startDailyDigestCron() {
   );
 }
 
+// Saves the forecast for the day that just began (from the complete previous day) so it can be graded
+// later. Independent of SMTP; a missed run is caught up by the first forecast request of the day.
+function startForecastSnapshotCron() {
+  const expr = process.env.FORECAST_SNAPSHOT_CRON || '5 0 * * *';
+  if (!cron.validate(expr)) {
+    console.error(`[forecast] invalid FORECAST_SNAPSHOT_CRON="${expr}" — nightly snapshot not scheduled.`);
+    return;
+  }
+  cron.schedule(
+    expr,
+    async () => {
+      try {
+        const result = await forecastSnapshots.saveToday();
+        console.log('[forecast] nightly snapshot:', result.saved ? `saved ${result.items} products` : result.reason);
+      } catch (err) {
+        console.error('[forecast] nightly snapshot failed:', err.message);
+      }
+    },
+    { timezone: DemandForecastModel.STORE_TIMEZONE },
+  );
+  console.log(`[forecast] nightly snapshot scheduled with cron "${expr}" (tz=${DemandForecastModel.STORE_TIMEZONE})`);
+}
+
 server.listen(PORT, async () => {
   console.log(`🚀 POS Server running on http://localhost:${PORT}`);
+  startForecastSnapshotCron();
   const smtpOk = await mailer.verifyMailer();
   if (smtpOk) {
     startDailyDigestCron();

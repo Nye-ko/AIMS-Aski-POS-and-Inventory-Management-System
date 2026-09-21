@@ -5,11 +5,13 @@ import {
   Lock, Clock, Banknote, X, Percent, Download, ShieldCheck,
   Check, LayoutGrid, Sprout, Leaf, Wheat, SprayCan, Wrench,
   Pill, PaintBucket, Package, ShoppingCart,
-  Wallet, LogOut, ShoppingBag, Milk, Palette, Coffee,
+  Wallet, LogOut, KeyRound, ShoppingBag, Milk, Palette, Coffee,
   Soup, Cylinder, CheckCircle2
 } from 'lucide-react';
 import { exportCsv } from '../utils/exportCsv';
 import { useAuth } from '../auth/AuthContext';
+import { apiFetch } from '../auth/apiFetch';
+import ChangePasswordModal from '../auth/ChangePasswordModal';
 
 // Maps a product/category name to a distinct, representative lucide icon
 // for the dropdown menu and product card placeholders — every category
@@ -104,7 +106,8 @@ const getGreeting = () => {
 };
 
 export default function CashierPOS() {
-  const { user, token, logout, authorizeSupervisor } = useAuth();
+  const { user, token, logout } = useAuth();
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const navigate = useNavigate();
 
   // A write failed with 401 because the session's JWT points at a user id
@@ -140,7 +143,9 @@ export default function CashierPOS() {
   // FEATURE 1: Supervisor Discount States (percentage & fixed value stay in sync)
   const [discountPercent, setDiscountPercent] = useState(0);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
-  const [supervisorPassword, setSupervisorPassword] = useState("");
+  const [supervisorPin, setSupervisorPin] = useState("");
+  const [discountApproval, setDiscountApproval] = useState(null); // { token, approver } from POST /api/pos/approve
+  const [isApproving, setIsApproving] = useState(false);
   const [tempDiscountPercent, setTempDiscountPercent] = useState(0);
   const [tempDiscountAmount, setTempDiscountAmount] = useState(0);
   const [discountError, setDiscountError] = useState("");
@@ -151,16 +156,30 @@ export default function CashierPOS() {
 
   // FEATURE 3: End of Day / X-Reading Reconciliation States
   const [showEODAuthModal, setShowEODAuthModal] = useState(false);
-  const [eodSupervisorPassword, setEodSupervisorPassword] = useState("");
+  const [eodSupervisorPin, setEodSupervisorPin] = useState("");
+  const [eodApprovalToken, setEodApprovalToken] = useState(null);
+  const [eodClosedReportNo, setEodClosedReportNo] = useState(null);
+  const [eodFigures, setEodFigures] = useState({ gross: 0, discount: 0, net: 0 });
   const [eodAuthError, setEodAuthError] = useState("");
   const [eodUnlocked, setEodUnlocked] = useState(false);
   const [showEODModal, setShowEODModal] = useState(false);
   const [expectedSales, setExpectedSales] = useState(0);
-  const [grossSalesTotal, setGrossSalesTotal] = useState(0);
   const [cashDenominations, setCashDenominations] = useState({
     p1000: 0, p500: 0, p200: 0, p100: 0, p50: 0,
     p20: 0, p10: 0, p5: 0, p1: 0, c25: 0
   });
+
+  // Exchanges a supervisor PIN for a short-lived approval token (the PIN itself is never stored client-side).
+  const requestApproval = async (body) => {
+    const res = await apiFetch('http://localhost:5000/api/pos/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Supervisor approval failed.');
+    return data;
+  };
 
   // Handler for Denomination Inputs
   const handleDenominationChange = (key, value) => {
@@ -174,7 +193,7 @@ export default function CashierPOS() {
   // FETCH PRODUCTS FROM BACKEND
   const fetchProducts = () => {
     setLoading(true);
-    fetch('http://localhost:5000/api/products')
+    apiFetch('http://localhost:5000/api/products')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch products');
         return res.json();
@@ -302,6 +321,7 @@ export default function CashierPOS() {
   const handleClearCart = () => {
     setCart([]);
     setDiscountPercent(0);
+    setDiscountApproval(null);
   };
 
   // FEATURE 1: Discount Modal — opening syncs both fields to the currently applied discount
@@ -309,7 +329,7 @@ export default function CashierPOS() {
     const pct = discountPercent || 0;
     setTempDiscountPercent(pct);
     setTempDiscountAmount(subtotal > 0 ? Number(((subtotal * pct) / 100).toFixed(2)) : 0);
-    setSupervisorPassword("");
+    setSupervisorPin("");
     setDiscountError("");
     setShowDiscountModal(true);
   };
@@ -328,20 +348,38 @@ export default function CashierPOS() {
     setTempDiscountPercent(subtotal > 0 ? Number(((amt / subtotal) * 100).toFixed(2)) : 0);
   };
 
-  // FEATURE 1: Discount Authorization Logic
-  const handleApplyDiscount = () => {
+  // FEATURE 1: Discount Authorization Logic — the server verifies the supervisor PIN and
+  // returns an approval token that checkout must present for the discounted sale.
+  const handleApplyDiscount = async () => {
     if (subtotal <= 0) {
       setDiscountError("Add items to the cart before applying a discount.");
       return;
     }
-    if (!authorizeSupervisor(supervisorPassword)) {
-      setDiscountError("Invalid Supervisor Password!");
+    if (tempDiscountPercent <= 0) {
+      // Removing a discount needs no approval.
+      setDiscountPercent(0);
+      setDiscountApproval(null);
+      setShowDiscountModal(false);
       return;
     }
-    setDiscountPercent(tempDiscountPercent);
-    setShowDiscountModal(false);
-    setSupervisorPassword("");
+    if (isApproving) return;
+    setIsApproving(true);
     setDiscountError("");
+    try {
+      const approval = await requestApproval({
+        pin: supervisorPin,
+        action: 'DISCOUNT',
+        discountPercent: tempDiscountPercent,
+      });
+      setDiscountPercent(tempDiscountPercent);
+      setDiscountApproval(approval);
+      setShowDiscountModal(false);
+      setSupervisorPin("");
+    } catch (err) {
+      setDiscountError(err.message);
+    } finally {
+      setIsApproving(false);
+    }
   };
 
   // FEATURE 2: Park/Hold Sale Logic
@@ -352,6 +390,7 @@ export default function CashierPOS() {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       cart: [...cart],
       discountPercent,
+      discountApproval,
       total: cartTotal
     };
     setPendingSales((prev) => [...prev, newPendingOrder]);
@@ -361,6 +400,7 @@ export default function CashierPOS() {
   const handleRestorePendingSale = (pendingOrder) => {
     setCart(pendingOrder.cart);
     setDiscountPercent(pendingOrder.discountPercent);
+    setDiscountApproval(pendingOrder.discountApproval || null);
     setPendingSales((prev) => prev.filter((o) => o.id !== pendingOrder.id));
     setShowPendingModal(false);
   };
@@ -385,18 +425,18 @@ const handleConfirmSale = async () => {
     .replace('-', '_')
     .replace(' ', '_');
 
+  // The server recomputes every price and total from the database; the client only
+  // names the products, quantities, discount %, and the supervisor approval token.
+  // totalAmount is sent so the server can flag a price that changed under the cashier.
   const payload = {
     items: cart.map((item) => ({
-      productId: Number(item.id), // Ensure ID is numeric
-      name: item.name,
-      unitPrice: Number(item.unitPrice),
+      productId: Number(item.id),
       quantity: Number(item.quantity),
     })),
-    subtotal: Number(currentSubtotal.toFixed(2)),
     discountPercent: Number(discountPercent),
-    discountAmount: Number(currentDiscountAmount.toFixed(2)),
     totalAmount: Number(currentTotalAmount.toFixed(2)),
     paymentMethod: formattedPaymentMethod, // "CASH", "CARD", "E_WALLET"
+    approvalToken: discountPercent > 0 ? discountApproval?.token : undefined,
   };
 
   try {
@@ -414,10 +454,10 @@ const handleConfirmSale = async () => {
       // cashier-facing confirmation, replacing the native browser alert().
       setLastSale({
         items: cart.map((item) => ({ ...item })),
-        subtotal: currentSubtotal,
+        subtotal: Number(responseData.subtotal),
         discountPercent,
-        discountAmount: currentDiscountAmount,
-        total: currentTotalAmount,
+        discountAmount: Number(responseData.discountAmount),
+        total: Number(responseData.totalAmount),
         paymentMethod,
       });
       setShowSuccessModal(true);
@@ -426,6 +466,14 @@ const handleConfirmSale = async () => {
       fetchProducts(); // Refresh stock counts from server
     } else if (response.status === 401) {
       handleStaleSession();
+    } else if (responseData.code === 'INSUFFICIENT_STOCK' || responseData.code === 'PRICE_CHANGED') {
+      alert(responseData.error);
+      fetchProducts(); // Pull the latest stock and prices so the cart can be fixed
+    } else if (responseData.code === 'APPROVAL_INVALID' || responseData.code === 'APPROVAL_REQUIRED') {
+      // The supervisor approval expired or was already used — the discount must be re-authorized.
+      setDiscountPercent(0);
+      setDiscountApproval(null);
+      alert(`${responseData.error} The discount was removed; apply it again with the supervisor PIN.`);
     } else {
       console.error('Server error details:', responseData);
       alert(`Transaction failed: ${responseData.message || responseData.error || 'Server error'}`);
@@ -437,47 +485,39 @@ const handleConfirmSale = async () => {
 };
 
   // FEATURE 3: EOD RECONCILIATION API
-  const fetchExpectedCash = async () => {
-    try {
-      const res = await fetch('http://localhost:5000/api/reconciliation/expected-cash');
-      if (res.ok) {
-        const data = await res.json();
+  // Today's X-Reading figures for this cashier, computed by the server. Needs the
+  // supervisor approval token issued when the gate was unlocked.
+  const fetchExpectedCash = async (approvalToken) => {
+    const res = await apiFetch('http://localhost:5000/api/reconciliation/expected-cash', {
+      headers: { 'X-Approval-Token': approvalToken },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to load X-Reading figures.');
 
-        // Extract numeric value safely across various Prisma result formats
-        let rawVal = 0;
-        if (typeof data === 'number') {
-          rawVal = data;
-        } else if (typeof data.expectedCash === 'number') {
-          rawVal = data.expectedCash;
-        } else if (typeof data.expectedCash === 'object' && data.expectedCash !== null) {
-          // Unpacks Prisma aggregate objects like { _sum: { totalAmount: 1000 } }
-          rawVal = data.expectedCash._sum?.totalAmount || data.expectedCash._sum?.amount || 0;
-        } else if (data._sum) {
-          rawVal = data._sum.totalAmount || 0;
-        }
-
-        const numericVal = Number(rawVal) || 0;
-
-        setExpectedSales(numericVal);
-        setGrossSalesTotal(numericVal);
-      }
-    } catch (err) {
-      console.error('Failed to fetch expected cash:', err);
-      setExpectedSales(0);
-      setGrossSalesTotal(0);
-    }
+    setExpectedSales(Number(data.expectedCash) || 0);
+    setEodFigures({
+      gross: Number(data.grossSales) || 0,
+      discount: Number(data.totalDiscount) || 0,
+      net: Number(data.netSales) || 0,
+    });
+    setEodClosedReportNo(data.alreadyClosed ? data.closedReportNo : null);
   };
 
-  const handleExportReport = () => {
+  // Exports a saved reconciliation record, or a preview built from the live figures.
+  const handleExportReport = (savedRecord = null) => {
+    if (savedRecord) {
+      exportCsv(savedRecord);
+      return;
+    }
     exportCsv({
-      reportNo: `00${Math.floor(1000 + Math.random() * 9000)}`,
+      reportNo: `PREVIEW-${Math.floor(1000 + Math.random() * 9000)}`,
       createdAt: new Date().toISOString(),
       cashier: { username: user?.fullName || user?.username || 'Cashier' },
 
-      grossSales: grossSalesTotal || expectedSales,
+      grossSales: eodFigures.gross,
       pointsAvailed: 0.00,
-      totalDiscount: discountAmount || 0,
-      netSales: expectedSales,
+      totalDiscount: eodFigures.discount,
+      netSales: eodFigures.net,
 
       ...cashDenominations,
 
@@ -491,67 +531,73 @@ const handleConfirmSale = async () => {
   // Opening X-Reading/EOD always starts at the supervisor gate — the
   // denomination grid itself only renders once eodUnlocked flips true.
   const handleOpenEODModal = () => {
-    setEodSupervisorPassword("");
+    setEodSupervisorPin("");
     setEodAuthError("");
     setShowEODAuthModal(true);
   };
 
-  const handleAuthorizeEOD = () => {
-    if (!authorizeSupervisor(eodSupervisorPassword)) {
-      setEodAuthError("Invalid Supervisor Password!");
-      return;
-    }
-    setEodUnlocked(true);
-    setShowEODAuthModal(false);
-    setEodSupervisorPassword("");
+  const handleAuthorizeEOD = async () => {
+    if (isApproving) return;
+    setIsApproving(true);
     setEodAuthError("");
-    setShowEODModal(true);
-    fetchExpectedCash();
+    try {
+      const approval = await requestApproval({ pin: eodSupervisorPin, action: 'XREAD' });
+      await fetchExpectedCash(approval.token);
+      setEodApprovalToken(approval.token);
+      setEodUnlocked(true);
+      setShowEODAuthModal(false);
+      setEodSupervisorPin("");
+      setShowEODModal(true);
+    } catch (err) {
+      setEodAuthError(err.message);
+    } finally {
+      setIsApproving(false);
+    }
   };
 
   const handleCloseEODModal = () => {
     setShowEODModal(false);
     setEodUnlocked(false);
+    setEodApprovalToken(null);
   };
 
   const handleSubmitReconciliation = async () => {
     // Defense-in-depth: the grid can only be reached via handleAuthorizeEOD,
     // but re-check before writing the day's reconciliation record too.
-    if (!eodUnlocked) {
+    if (!eodUnlocked || !eodApprovalToken) {
       setShowEODModal(false);
       setEodAuthError("Supervisor authorization required.");
       setShowEODAuthModal(true);
       return;
     }
 
-    const payload = {
-      grossSales: grossSalesTotal || expectedSales,
-      pointsAvailed: 0.00,
-      totalDiscount: discountAmount || 0,
-      netSales: expectedSales,
-      posCash: expectedSales,
-      cashDiscount: 0.00,
-      cashierCash: totalCountedCash,
-      shortOver: shortOver,
-      denominations: cashDenominations,
-    };
-
+    // Totals, expected cash and the BALANCED/SHORTAGE/OVERAGE status are all computed
+    // by the server; only the counted denominations are sent.
     try {
       const res = await fetch('http://localhost:5000/api/reconciliation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-Approval-Token': eodApprovalToken,
+        },
+        body: JSON.stringify({ denominations: cashDenominations }),
       });
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
-        alert('Reconciliation saved successfully!');
-        handleExportReport();
-        setShowEODModal(false);
-        setEodUnlocked(false);
+        alert(`Reconciliation saved (${data.record.status}).`);
+        handleExportReport(data.record);
+        handleCloseEODModal();
+        setCashDenominations({ p1000: 0, p500: 0, p200: 0, p100: 0, p50: 0, p20: 0, p10: 0, p5: 0, p1: 0, c25: 0 });
       } else if (res.status === 401) {
         handleStaleSession();
+      } else if (data.code === 'APPROVAL_INVALID' || data.code === 'APPROVAL_REQUIRED') {
+        alert(`${data.error} Please unlock X-Reading again.`);
+        handleCloseEODModal();
       } else {
-        alert('Failed to save reconciliation record.');
+        alert(data.error || 'Failed to save reconciliation record.');
+        if (data.code === 'ALREADY_CLOSED') fetchExpectedCash(eodApprovalToken).catch(() => {});
       }
     } catch (err) {
       console.error('Submission error:', err);
@@ -616,6 +662,16 @@ const handleConfirmSale = async () => {
               <Banknote className="w-4 h-4" />
               <span className="hidden sm:inline">X-Reading / EOD</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setShowChangePassword(true)}
+              title="Change password"
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-blue-600 px-3 sm:px-3.5 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span className="hidden sm:inline">Password</span>
+            </button>
+            {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
             <button
               type="button"
               onClick={handleLogout}
@@ -939,12 +995,14 @@ const handleConfirmSale = async () => {
               </p>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor Password</label>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor PIN</label>
                 <input
                   type="password"
-                  placeholder="Enter supervisor password"
-                  value={supervisorPassword}
-                  onChange={(e) => setSupervisorPassword(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="Enter supervisor PIN"
+                  value={supervisorPin}
+                  onChange={(e) => setSupervisorPin(e.target.value.replace(/[^0-9]/g, ''))}
                   onKeyDown={(e) => e.key === 'Enter' && handleApplyDiscount()}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
                 />
@@ -960,9 +1018,10 @@ const handleConfirmSale = async () => {
             <div className="p-5 border-t border-slate-100">
               <button
                 onClick={handleApplyDiscount}
-                className="w-full py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+                disabled={isApproving}
+                className="w-full py-2.5 disabled:opacity-60 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all cursor-pointer"
               >
-                Authorize & Apply
+                {isApproving ? 'Verifying…' : 'Authorize & Apply'}
               </button>
             </div>
           </div>
@@ -1024,16 +1083,18 @@ const handleConfirmSale = async () => {
 
             <div className="p-5 space-y-3">
               <p className="text-xs text-slate-500 font-medium">
-                Enter the supervisor password to access X-Reading / EOD reconciliation.
+                Enter a supervisor PIN to access X-Reading / EOD reconciliation.
               </p>
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor Password</label>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor PIN</label>
                 <input
                   type="password"
+                  inputMode="numeric"
+                  maxLength={6}
                   autoFocus
-                  placeholder="Enter supervisor password"
-                  value={eodSupervisorPassword}
-                  onChange={(e) => setEodSupervisorPassword(e.target.value)}
+                  placeholder="Enter supervisor PIN"
+                  value={eodSupervisorPin}
+                  onChange={(e) => setEodSupervisorPin(e.target.value.replace(/[^0-9]/g, ''))}
                   onKeyDown={(e) => e.key === 'Enter' && handleAuthorizeEOD()}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
                 />
@@ -1055,9 +1116,10 @@ const handleConfirmSale = async () => {
               </button>
               <button
                 onClick={handleAuthorizeEOD}
-                className="px-4 py-2 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white font-bold text-xs rounded-full transition-all cursor-pointer"
+                disabled={isApproving}
+                className="px-4 py-2 disabled:opacity-60 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white font-bold text-xs rounded-full transition-all cursor-pointer"
               >
-                Unlock
+                {isApproving ? 'Verifying…' : 'Unlock'}
               </button>
             </div>
           </div>
@@ -1088,6 +1150,11 @@ const handleConfirmSale = async () => {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-5 space-y-3 min-h-0">
+              {eodClosedReportNo && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
+                  Today's register was already closed (report {eodClosedReportNo}). You can review the figures but not submit again.
+                </div>
+              )}
               <p className="text-xs text-slate-500 font-medium">Input physical cash denomination quantities:</p>
 
               {/* DENOMINATIONS INPUT GRID */}
@@ -1146,7 +1213,7 @@ const handleConfirmSale = async () => {
             <div className="grid grid-cols-2 gap-2 shrink-0 p-5 border-t border-slate-100">
               <button
                 type="button"
-                onClick={handleExportReport}
+                onClick={() => handleExportReport()}
                 className="py-2.5 bg-white hover:bg-slate-50 text-[#0B132B] border border-slate-200 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -1156,7 +1223,8 @@ const handleConfirmSale = async () => {
               <button
                 type="button"
                 onClick={handleSubmitReconciliation}
-                className="py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                disabled={!!eodClosedReportNo}
+                className="py-2.5 disabled:opacity-40 disabled:cursor-not-allowed bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 Submit Reconciliation
               </button>

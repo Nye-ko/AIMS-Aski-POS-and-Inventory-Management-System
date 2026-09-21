@@ -134,7 +134,7 @@ export const exportCsv = (dataOverride = null) => {
             <table>
               <tr>
                 <td class="label">CASH</td>
-                <td class="val">${formatMoney(r.netSales)}</td>
+                <td class="val">${formatMoney(r.posCash ?? r.netSales)}</td>
               </tr>
             </table>
 

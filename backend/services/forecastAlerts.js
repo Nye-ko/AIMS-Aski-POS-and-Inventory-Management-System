@@ -15,13 +15,14 @@ async function buildDigest(days = 30) {
   const skus = Array.isArray(forecast.skuDemandList) ? forecast.skuDemandList : [];
 
   const actual = trajectory.filter((d) => d.actual != null);
-  const forecastPts = trajectory.filter((d) => d.forecast != null);
+  // The first forecast point repeats the last actual so the chart lines join; only count future days.
+  const forecastPts = trajectory.filter((d) => d.actual == null && d.forecast != null);
   const sumActual = actual.reduce((a, d) => a + Number(d.actual || 0), 0);
   const sumForecast = forecastPts.reduce((a, d) => a + Number(d.forecast || 0), 0);
 
   const highRisk = skus.filter((s) => s.status && s.status !== 'HEALTHY');
 
-  return { kpis, trajectory, skus, highRisk, sumActual, sumForecast };
+  return { kpis, trajectory, skus, highRisk, sumActual, sumForecast, meta: forecast.meta };
 }
 
 async function sendDigestNow(days = 30) {

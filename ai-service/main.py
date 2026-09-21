@@ -1,155 +1,129 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List, Optional
-import pandas as pd
-from datetime import datetime, timedelta
+import hmac
+import os
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Annotated, List, Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException
+from pydantic import AfterValidator, BaseModel, Field
+
+from backtest import MAX_ORIGINS, run_backtest
+from forecast_engine import ENGINE_NAME, ENGINE_VERSION, build_forecast
+
+
+
+def _load_env_file(path: Path) -> None:
+    """Reads KEY=VALUE lines from ai-service/.env (if present) without overriding real environment variables."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_file(Path(__file__).with_name(".env"))
+
+
+def require_key(x_ai_key: Optional[str] = Header(default=None)) -> None:
+    """Optional shared secret: when AI_SERVICE_KEY is set, forecast calls must send it as X-AI-Key.
+    Unset means open, as before, so local setups keep working without configuration."""
+    expected = os.environ.get("AI_SERVICE_KEY", "")
+    if not expected:
+        return
+    if x_ai_key is None or not hmac.compare_digest(x_ai_key.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-AI-Key")
+
 
 app = FastAPI(title="AMPC POS AI Forecasting Microservice")
 
-class TransactionItemInput(BaseModel):
+ISO_DATE = r"^\d{4}-\d{2}-\d{2}$"
+
+
+def _real_date(value: str) -> str:
+    date.fromisoformat(value)  # ValueError for impossible dates such as 2026-13-45 -> 422
+    return value
+
+
+IsoDate = Annotated[str, Field(pattern=ISO_DATE), AfterValidator(_real_date)]
+
+
+class ProductInput(BaseModel):
+    id: int
+    sku: str = Field(min_length=1)
+    name: str
+    category: Optional[str] = None
+    stock: int = 0
+    minStock: int = 0
+    expiryDate: Optional[IsoDate] = None
+    createdAt: Optional[IsoDate] = None
+    leadTimeDays: int = Field(default=7, ge=1, le=90)   # supplier's days from order to arrival
+    onOrder: int = Field(default=0, ge=0)               # units on pending purchase orders
+
+
+class SaleInput(BaseModel):
+    """Units and gross revenue (before discounts) for one product on one store-local day."""
     sku: str
-    productName: str
-    quantity: int
-    unitPrice: float
-    createdAt: str
-    currentStock: int
-    expiryDate: Optional[str] = None
+    date: IsoDate
+    quantity: int = Field(ge=0)
+    revenue: float = Field(ge=0)
+
+
+class DailyTotalInput(BaseModel):
+    """Store-wide gross / discount / net for one store-local day, from the Transaction table."""
+    date: IsoDate
+    gross: float = Field(ge=0)
+    discount: float = Field(ge=0)
+    net: float = Field(ge=0)
+
+
+class StockoutInput(BaseModel):
+    """A store-local day on which the product was out of stock (its zero sales say nothing about demand)."""
+    sku: str
+    date: IsoDate
+
 
 class ForecastRequest(BaseModel):
-    daysToForecast: int = 30
-    transactions: List[TransactionItemInput]
+    asOf: IsoDate          # today in the store's time zone; history ends yesterday
+    timezone: Optional[str] = None
+    daysToForecast: int = Field(default=30, ge=1, le=365)
+    historyDays: int = Field(default=180, ge=7, le=730)
+    products: List[ProductInput]
+    sales: List[SaleInput] = []
+    dailyTotals: List[DailyTotalInput] = []
+    stockouts: List[StockoutInput] = []
+
+
+class BacktestRequest(ForecastRequest):
+    maxOrigins: int = Field(default=MAX_ORIGINS, ge=1, le=120)
+
 
 @app.get("/health")
 def health_check():
-    return {"status": "online", "service": "AI Forecasting Engine"}
-
-@app.post("/api/v1/forecast")
-def generate_forecast(payload: ForecastRequest):
-    if not payload.transactions:
-        return {"error": "No transaction data provided"}
-
-    # Load transactions into Pandas DataFrame
-    data = []
-    for t in payload.transactions:
-        data.append({
-            "sku": t.sku,
-            "productName": t.productName,
-            "quantity": t.quantity,
-            "unitPrice": t.unitPrice,
-            "revenue": t.quantity * t.unitPrice,
-            "createdAt": t.createdAt,
-            "currentStock": t.currentStock,
-            "expiryDate": t.expiryDate
-        })
-
-    df = pd.DataFrame(data)
-
-    # Make dates timezone-naive to avoid sub-type mismatch errors
-    df['createdAt'] = pd.to_datetime(df['createdAt']).dt.tz_localize(None)
-    df['expiryDate'] = pd.to_datetime(df['expiryDate']).dt.tz_localize(None)
-
-    # 1. Gross & Net Revenue Forecast
-    daily_sales = df.groupby(df['createdAt'].dt.date).agg(
-        total_revenue=('revenue', 'sum')
-    ).reset_index()
-
-    avg_daily_revenue = daily_sales['total_revenue'].tail(7).mean() if len(daily_sales) > 0 else 0
-    actual_revenue_mtd = float(daily_sales['total_revenue'].sum())
-    
-    projected_additional_rev = avg_daily_revenue * payload.daysToForecast
-    projected_gross = round(actual_revenue_mtd + projected_additional_rev, 2)
-    estimated_discounts = round(projected_gross * 0.045, 2)
-    projected_net = round(projected_gross - estimated_discounts, 2)
-
-    # 2. Revenue Trajectory
-    trajectory = []
-    today = datetime.now()
-    
-    for _, row in daily_sales.iterrows():
-        trajectory.append({
-            "day": row['createdAt'].strftime("%b %d"),
-            "actual": float(round(row['total_revenue'], 2)),
-            "forecast": None
-        })
-
-    last_val = trajectory[-1]['actual'] if trajectory else 0
-    if trajectory:
-        trajectory[-1]['forecast'] = last_val
-
-    for i in range(1, payload.daysToForecast + 1):
-        future_date = today + timedelta(days=i)
-        last_val += avg_daily_revenue
-        trajectory.append({
-            "day": future_date.strftime("%b %d"),
-            "actual": None,
-            "forecast": float(round(last_val, 2))
-        })
-
-    # 3. Category Breakdown
-    category_sales = df.groupby('sku').agg(
-        total_rev=('revenue', 'sum')
-    ).reset_index()
-
-    total_rev_sum = category_sales['total_rev'].sum() or 1.0
-    category_breakdown = [
-        {
-            "category": row['sku'],
-            "projectedRevenue": float(round(row['total_rev'], 2)),
-            "percentShare": float(round((row['total_rev'] / total_rev_sum) * 100, 1))
-        }
-        for _, row in category_sales.iterrows()
-    ]
-
-    # 4. Item-Level Demand
-    sku_summary = df.groupby(['sku', 'productName']).agg(
-        total_qty=('quantity', 'sum'),
-        current_stock=('currentStock', 'first'),
-        expiry_date=('expiryDate', 'first'),
-        days_active=('createdAt', lambda x: max((x.max() - x.min()).days, 1))
-    ).reset_index()
-
-    sku_demand_list = []
-    high_risk_count = 0
-
-    # Ensure reference timestamp for calculations is timezone-naive
-    today_ts = pd.Timestamp(today).tz_localize(None)
-
-    for idx, row in sku_summary.iterrows():
-        daily_demand = max(1, round(row['total_qty'] / row['days_active']))
-        forecast_7day = daily_demand * 7
-        stock = row['current_stock']
-        reorder_qty = max(0, forecast_7day - stock)
-
-        status = "STABLE"
-        if stock <= forecast_7day:
-            status = "REORDER NOW"
-            high_risk_count += 1
-        elif pd.notnull(row['expiry_date']):
-            days_to_expiry = (row['expiry_date'] - today_ts).days
-            if days_to_expiry > 0 and stock > (daily_demand * days_to_expiry):
-                status = "EXPIRY RISK"
-                high_risk_count += 1
-
-        sku_demand_list.append({
-            "id": str(idx + 1),
-            "sku": row['sku'],
-            "name": row['productName'],
-            "stock": int(stock),
-            "dailyDemand": int(daily_demand),
-            "forecast7Day": int(forecast_7day),
-            "reorderQty": int(reorder_qty),
-            "status": status
-        })
-
     return {
-        "kpis": {
-            "projectedGross": projected_gross,
-            "projectedNet": projected_net,
-            "projectedDiscounts": estimated_discounts,
-            "grossGrowth": "+8.5%",
-            "highRiskSKUs": high_risk_count
-        },
-        "revenueTrajectory": trajectory,
-        "categoryBreakdown": category_breakdown,
-        "skuDemandList": sku_demand_list
+        "status": "online",
+        "service": "AI Forecasting Engine",
+        "engine": ENGINE_NAME,
+        "engineVersion": ENGINE_VERSION,
+        "keyRequired": bool(os.environ.get("AI_SERVICE_KEY")),
     }
+
+
+@app.post("/api/v1/forecast", dependencies=[Depends(require_key)])
+def generate_forecast(payload: ForecastRequest):
+    result = build_forecast(payload.model_dump(), source="ai-service")
+    result["meta"]["generatedAt"] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+@app.post("/api/v1/backtest", dependencies=[Depends(require_key)])
+def backtest(payload: BacktestRequest):
+    """Replays the forecast engine over past days and grades it against what actually sold."""
+    data = payload.model_dump()
+    result = run_backtest(data, max_origins=data["maxOrigins"])
+    result["meta"]["generatedAt"] = datetime.now(timezone.utc).isoformat()
+    return result

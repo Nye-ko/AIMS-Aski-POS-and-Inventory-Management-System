@@ -17,14 +17,27 @@ import {
   LayoutGrid,
   Sprout, Leaf, Wheat, SprayCan, Wrench,
   Pill, PaintBucket, ShoppingBag, Milk, Palette, Coffee,
-  Soup, Cylinder
+  Soup, Cylinder,
+  History, SlidersHorizontal
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import PurchaseOrdersList from './PurchaseOrdersList';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
+import StockHistoryModal from './StockHistoryModal';
+import AdjustStockModal from './AdjustStockModal';
+
+import { apiFetch } from '../../auth/apiFetch';
+import { useAuth } from '../../auth/AuthContext';
+import { buildInventorySheets } from '../../utils/inventorySheets';
 
 const API_BASE_URL = 'http://localhost:5000/api';
+
+// Surface the server's own error message (e.g. "Barcode ... is already used by ...") instead of a bare status.
+const throwApiError = async (response) => {
+  const body = await response.json().catch(() => ({}));
+  throw new Error(body.error || `HTTP error status ${response.status}`);
+};
 
 // Same category -> icon mapping as cashierPOS.jsx, so a product shows the
 // identical glyph whether viewed at the register or in inventory.
@@ -81,8 +94,8 @@ export default function InventorySystem() {
     setLoading(true);
     try {
       const [productsRes, suppliersRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/products`),
-        fetch(`${API_BASE_URL}/suppliers`)
+        apiFetch(`${API_BASE_URL}/products`),
+        apiFetch(`${API_BASE_URL}/suppliers`)
       ]);
 
       if (!productsRes.ok) throw new Error(`Products endpoint returned status ${productsRes.status}`);
@@ -109,87 +122,93 @@ export default function InventorySystem() {
     'Expired':      { fill: 'FFF3E8FF', font: 'FF7E22CE' },
   };
 
-  const exportToExcel = async (data, fileName) => {
-    if (!data || data.length === 0) {
+  // `sheets` ([{ name, rows }]) writes one worksheet per entry; without it `data` becomes a single "Report" sheet.
+  const exportToExcel = async (data, fileName, sheets = null) => {
+    const sheetList = (sheets || [{ name: 'Report', rows: data }]).filter((sheet) => sheet.rows && sheet.rows.length > 0);
+    if (sheetList.length === 0) {
       alert("No data available to export.");
       return;
     }
-
-    const headers = Object.keys(data[0]);
-    const moneyHeaders = new Set(headers.filter((h) => h.includes('₱')));
-    const statusColIndex = headers.indexOf('Status') + 1;
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'AMPC Inventory';
     wb.created = new Date();
 
-    const ws = wb.addWorksheet('Report', {
-      views: [{ state: 'frozen', ySplit: 1 }],
-    });
+    const addSheet = (name, data) => {
+      const headers = Object.keys(data[0]);
+      const moneyHeaders = new Set(headers.filter((h) => h.includes('₱')));
+      const statusColIndex = headers.indexOf('Status') + 1;
 
-    ws.columns = headers.map((h) => {
-      const maxLen = data.reduce((max, row) => {
-        const val = row[h];
-        return Math.max(max, val == null ? 0 : String(val).length);
-      }, h.length);
-      return { header: h, key: h, width: Math.min(Math.max(maxLen + 3, 12), 40) };
-    });
-
-    data.forEach((row) => {
-      const values = {};
-      headers.forEach((h) => {
-        const raw = row[h];
-        values[h] = moneyHeaders.has(h) && raw !== '' && raw != null ? Number(raw) : raw;
-      });
-      ws.addRow(values);
-    });
-
-    const thinBorder = (color) => ({
-      top: { style: 'thin', color: { argb: color } },
-      bottom: { style: 'thin', color: { argb: color } },
-      left: { style: 'thin', color: { argb: color } },
-      right: { style: 'thin', color: { argb: color } },
-    });
-
-    const headerRow = ws.getRow(1);
-    headerRow.height = 20;
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      cell.border = thinBorder('FFCBD5E1');
-    });
-    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
-
-    for (let i = 2; i <= ws.rowCount; i++) {
-      const row = ws.getRow(i);
-      const isEven = i % 2 === 0;
-      row.eachCell((cell, colNumber) => {
-        const header = headers[colNumber - 1];
-        cell.border = thinBorder('FFE2E8F0');
-        if (moneyHeaders.has(header)) {
-          cell.numFmt = '#,##0.00';
-          cell.alignment = { horizontal: 'right' };
-        } else if (typeof cell.value === 'number') {
-          cell.alignment = { horizontal: 'center' };
-        } else {
-          cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        }
-        if (isEven) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
-        }
+      const ws = wb.addWorksheet(name, {
+        views: [{ state: 'frozen', ySplit: 1 }],
       });
 
-      if (statusColIndex > 0) {
-        const statusCell = row.getCell(statusColIndex);
-        const style = STATUS_STYLES[statusCell.value];
-        if (style) {
-          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
-          statusCell.font = { bold: true, color: { argb: style.font } };
-          statusCell.alignment = { horizontal: 'center' };
+      ws.columns = headers.map((h) => {
+        const maxLen = data.reduce((max, row) => {
+          const val = row[h];
+          return Math.max(max, val == null ? 0 : String(val).length);
+        }, h.length);
+        return { header: h, key: h, width: Math.min(Math.max(maxLen + 3, 12), 40) };
+      });
+
+      data.forEach((row) => {
+        const values = {};
+        headers.forEach((h) => {
+          const raw = row[h];
+          values[h] = moneyHeaders.has(h) && raw !== '' && raw != null ? Number(raw) : raw;
+        });
+        ws.addRow(values);
+      });
+
+      const thinBorder = (color) => ({
+        top: { style: 'thin', color: { argb: color } },
+        bottom: { style: 'thin', color: { argb: color } },
+        left: { style: 'thin', color: { argb: color } },
+        right: { style: 'thin', color: { argb: color } },
+      });
+
+      const headerRow = ws.getRow(1);
+      headerRow.height = 20;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = thinBorder('FFCBD5E1');
+      });
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
+
+      for (let i = 2; i <= ws.rowCount; i++) {
+        const row = ws.getRow(i);
+        const isEven = i % 2 === 0;
+        row.eachCell((cell, colNumber) => {
+          const header = headers[colNumber - 1];
+          cell.border = thinBorder('FFE2E8F0');
+          if (moneyHeaders.has(header)) {
+            cell.numFmt = '#,##0.00';
+            cell.alignment = { horizontal: 'right' };
+          } else if (typeof cell.value === 'number') {
+            cell.alignment = { horizontal: 'center' };
+          } else {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          }
+          if (isEven) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          }
+        });
+
+        if (statusColIndex > 0) {
+          const statusCell = row.getCell(statusColIndex);
+          const style = STATUS_STYLES[statusCell.value];
+          if (style) {
+            statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
+            statusCell.font = { bold: true, color: { argb: style.font } };
+            statusCell.alignment = { horizontal: 'center' };
+          }
         }
       }
-    }
+
+    };
+    sheetList.forEach((sheet) => addSheet(sheet.name, sheet.rows));
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -316,8 +335,13 @@ function ToolbarButton({ icon: Icon, iconColor, label, onClick }) {
 // INVENTORY PAGE COMPONENT
 // ==========================================
 function InventoryPage({ products, setProducts, suppliers, exportToExcel, onDataChanged }) {
+  // Supervisors can browse and export inventory but not change it (matches the backend role guards).
+  const { role } = useAuth();
+  const canWrite = role === 'ADMIN' || role === 'INVENTORY';
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
+  const [historyProduct, setHistoryProduct] = useState(null);
+  const [adjustProduct, setAdjustProduct] = useState(null);
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
   const [isReceivingReportOpen, setIsReceivingReportOpen] = useState(false);
   const [isPurchaseReturnOpen, setIsPurchaseReturnOpen] = useState(false);
@@ -365,8 +389,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     currentStock: '',
     minStock: '',
     unitCost: '',
-    sellingPrice: '',
-    batchDate: ''
+    sellingPrice: ''
   });
 
   const [stockSearchQuery, setStockSearchQuery] = useState('');
@@ -388,7 +411,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
   };
 
   const handleClearForm = () => {
-    setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
+    setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '' });
   };
 
   const handleAddProduct = async (e) => {
@@ -408,22 +431,21 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         minStock: Number(formData.minStock) || 10,
         unitCost: Number(formData.unitCost) || 0,
         sellingPrice: Number(formData.sellingPrice) || 0,
-        batchDate: formData.batchDate || new Date().toISOString().split('T')[0],
         supplierId: Number(formData.supplierId)
       };
 
-      const response = await fetch(`${API_BASE_URL}/products`, {
+      const response = await apiFetch(`${API_BASE_URL}/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) throw new Error(`HTTP error status ${response.status}`);
+      if (!response.ok) await throwApiError(response);
 
       const savedProduct = await response.json();
 
       setProducts(prev => [savedProduct, ...prev]);
-      setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '', batchDate: '' });
+      setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '' });
       setIsFormOpen(false);
     } catch (err) {
       alert(`Error saving product: ${err.message}`);
@@ -460,7 +482,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/products/${selectedProduct.id}/add-stock`, {
+      const response = await apiFetch(`${API_BASE_URL}/products/${selectedProduct.id}/add-stock`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -469,7 +491,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         })
       });
 
-      if (!response.ok) throw new Error(`HTTP error status ${response.status}`);
+      if (!response.ok) await throwApiError(response);
 
       const updatedProduct = await response.json();
 
@@ -498,11 +520,12 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     return matchesSearch && matchesCategory;
   });
 
+  // Every product (the on-screen search/category filter is ignored) goes into the file: an "All Products" sheet,
+  // then one sheet per category. Product IDs are internal, so they are not exported.
   const handleExportInventorySheet = () => {
-    const data = filteredProducts.map(p => {
+    const rows = products.map((p) => {
       const stock = getStockValue(p);
       return {
-        'Product ID': p.id,
         'Barcode': p.barcode,
         'Product Name': p.name,
         'Supplier': p.supplierName || 'N/A',
@@ -514,43 +537,32 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         'Status': p.status || (stock > 10 ? 'In Stock' : stock > 0 ? 'Low Stock' : 'Out of Stock')
       };
     });
-    exportToExcel(data, 'Inventory_Sheet');
+    exportToExcel(rows, 'Inventory_Sheet', buildInventorySheets(rows));
   };
 
   return (
     <div className="space-y-6">
       <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5 space-y-4">
-        {/* Row 1: utility actions — uniform neutral toolbar buttons, primary action last */}
+        {/* Row 1: utility actions — uniform neutral toolbar buttons (they wrap as a group) */}
         <div className="relative z-10 flex flex-wrap items-center gap-2">
           <ToolbarButton icon={FileSpreadsheet} iconColor="text-emerald-600" label="Export Inventory Sheet" onClick={handleExportInventorySheet} />
-          <ToolbarButton
-            icon={PackagePlus}
-            iconColor="text-indigo-600"
-            label="Add Stock"
-            onClick={() => {
-              setIsAddStockOpen(true);
-              setIsFormOpen(false);
-              resetStockForm();
-            }}
-          />
-          <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => setIsPurchaseOrderOpen(true)} />
-          <ToolbarButton icon={Truck} iconColor="text-teal-600" label="Create Receiving Report" onClick={() => setIsReceivingReportOpen(true)} />
-          <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
-
-          <button
-            onClick={() => {
-              setIsFormOpen(!isFormOpen);
-              setIsAddStockOpen(false);
-            }}
-            className={`ml-auto flex items-center justify-center gap-2 px-4 py-2 font-bold text-xs rounded-full transition-all cursor-pointer ${
-              isFormOpen
-                ? 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
-                : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
-            }`}
-          >
-            {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
-          </button>
+          {canWrite && (
+            <>
+              <ToolbarButton
+                icon={PackagePlus}
+                iconColor="text-indigo-600"
+                label="Add Stock"
+                onClick={() => {
+                  setIsAddStockOpen(true);
+                  setIsFormOpen(false);
+                  resetStockForm();
+                }}
+              />
+              <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => setIsPurchaseOrderOpen(true)} />
+              <ToolbarButton icon={Truck} iconColor="text-teal-600" label="Create Receiving Report" onClick={() => setIsReceivingReportOpen(true)} />
+              <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
+            </>
+          )}
         </div>
 
         <div className="relative z-10 border-t border-slate-100" />
@@ -558,7 +570,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         {/* Row 2: search + category filter — z-20 so its dropdown (which
             visually overflows into the card below) always wins the stacking
             tie against the Product List card's own z-10 header/table rows */}
-        <div className="relative z-20 flex flex-col sm:flex-row gap-2">
+        <div className="relative z-20 flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="relative w-full sm:max-w-sm">
             <Search className="w-4 h-4 text-blue-500 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
@@ -619,6 +631,21 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               </div>
             )}
           </div>
+
+          {canWrite && <button
+            onClick={() => {
+              setIsFormOpen(!isFormOpen);
+              setIsAddStockOpen(false);
+            }}
+            className={`sm:ml-auto flex shrink-0 items-center justify-center gap-2 px-4 py-2 font-bold text-xs rounded-full transition-all cursor-pointer ${
+              isFormOpen
+                ? 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+                : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
+            }`}
+          >
+            {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
+          </button>}
         </div>
       </div>
 
@@ -929,6 +956,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                 <th className="px-4 py-3.5 text-center">Price</th>
                 <th className="px-4 py-3.5 text-center">Expiry</th>
                 <th className="px-4 py-3.5 text-right">Status</th>
+                <th className="px-4 py-3.5 text-right">Ledger</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -961,16 +989,26 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                     <td className="px-4 py-3.5">{p.category}</td>
                     <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
                     <td className="px-4 py-3.5 text-center">
-                      <MinStockEditor product={p} onUpdated={(updated) => {
-                        setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
-                      }} />
+                      {canWrite ? (
+                        <MinStockEditor product={p} onUpdated={(updated) => {
+                          setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
+                        }} />
+                      ) : (
+                        <span className="font-semibold text-slate-700">{p.minStock ?? 10}</span>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
                     <td className="px-4 py-3.5 text-center font-bold text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
                     <td className="px-4 py-3.5 text-center">
-                      <ExpiryEditor product={p} onUpdated={(updated) => {
-                        setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
-                      }} />
+                      {canWrite ? (
+                        <ExpiryEditor product={p} onUpdated={(updated) => {
+                          setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
+                        }} />
+                      ) : (
+                        <span className="font-semibold text-slate-700">
+                          {p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : '—'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
@@ -978,11 +1016,33 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                         {statusText}
                       </span>
                     </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setHistoryProduct(p)}
+                        title="Stock history"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-[11px] font-bold cursor-pointer"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        History
+                      </button>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          onClick={() => setAdjustProduct(p)}
+                          title="Adjust stock"
+                          className="ml-1.5 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-[11px] font-bold cursor-pointer"
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                          Adjust
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan="9" className="px-4 py-10 text-center text-slate-400 font-semibold">
+                  <td colSpan="10" className="px-4 py-10 text-center text-slate-400 font-semibold">
                     No products found.
                   </td>
                 </tr>
@@ -991,6 +1051,16 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
           </table>
         </div>
       </div>
+
+      {historyProduct && <StockHistoryModal key={historyProduct.id} product={historyProduct} onClose={() => setHistoryProduct(null)} />}
+      {adjustProduct && (
+        <AdjustStockModal
+          key={adjustProduct.id}
+          product={adjustProduct}
+          onClose={() => setAdjustProduct(null)}
+          onAdjusted={(updated) => setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+        />
+      )}
 
       <PurchaseOrdersList
         isOpen={isPurchaseOrderOpen}
@@ -1037,7 +1107,7 @@ function ExpiryEditor({ product, onUpdated }) {
   const commit = async (next) => {
     setSaving(true); setErr('');
     try {
-      const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+      const res = await apiFetch(`${API_BASE_URL}/products/${product.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiryDate: next || null }),
@@ -1084,7 +1154,7 @@ function MinStockEditor({ product, onUpdated }) {
     if (!Number.isFinite(num) || num < 0) return;
     setSaving(true); setErr('');
     try {
-      const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+      const res = await apiFetch(`${API_BASE_URL}/products/${product.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ minStock: num }),

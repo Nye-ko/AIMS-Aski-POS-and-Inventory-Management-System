@@ -4,10 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { X, ClipboardCheck, Loader2, Inbox, ChevronLeft } from 'lucide-react';
 
+import { apiFetch } from '../../auth/apiFetch';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 
 async function downloadReceivingReportFile(receivingReport) {
-  const res = await fetch(`${API_BASE_URL}/receiving-reports/${receivingReport.id}/export`);
+  const res = await apiFetch(`${API_BASE_URL}/receiving-reports/${receivingReport.id}/export`);
   if (!res.ok) throw new Error(`Failed to export ${receivingReport.rrNumber}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -52,7 +54,7 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
     setIsLoadingList(true);
     setListError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/purchase-orders/pending`);
+      const res = await apiFetch(`${API_BASE_URL}/purchase-orders/pending`);
       if (!res.ok) throw new Error('Failed to load pending purchase orders');
       setPendingOrders(await res.json());
     } catch (err) {
@@ -283,8 +285,13 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
                         <input
                           type="number"
                           min="0"
+                          max={item.orderedQty}
                           value={item.quantity}
-                          onChange={(e) => updateItem(item.productId, { quantity: parseInt(e.target.value, 10) || 0 })}
+                          onChange={(e) =>
+                            updateItem(item.productId, {
+                              quantity: Math.max(0, Math.min(item.orderedQty, parseInt(e.target.value, 10) || 0)),
+                            })
+                          }
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-center text-xs"
                         />
                       </td>

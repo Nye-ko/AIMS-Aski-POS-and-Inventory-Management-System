@@ -9,9 +9,6 @@ export const DEV_CREDENTIALS_HINT = [
   { username: 'inventory', password: 'inventory123', role: 'INVENTORY' },
 ];
 
-// Password supervisors type at the POS to authorize a discount.
-export const DEV_SUPERVISOR_PIN = 'super123';
-
 // Where each role lands after login.
 export const ROLE_HOME = {
   ADMIN:      '/adminDashboard',

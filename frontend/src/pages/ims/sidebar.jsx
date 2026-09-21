@@ -15,8 +15,10 @@ import {
   Eye,
   EyeOff,
   X,
+  KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
+import ChangePasswordModal from '../../auth/ChangePasswordModal';
 
 function AdminAuthModal({ onClose, onVerified }) {
   const { verifyAdminPassword } = useAuth();
@@ -134,6 +136,7 @@ function AdminAuthModal({ onClose, onVerified }) {
 export default function Sidebar() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showAdminAuthModal, setShowAdminAuthModal] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout, isAdminAuthenticated } = useAuth();
@@ -143,15 +146,17 @@ export default function Sidebar() {
     navigate('/', { replace: true });
   };
 
-  const sidebarLinks = [
-    { id: 'home', label: 'Home', icon: Home, path: '/adminDashboard' },
-    { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList' },
-    { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand' },
-    { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance' },
-    ...(user?.role === 'ADMIN'
-      ? [{ id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement' }]
-      : []),
+  // Mirrors the route guards in App.jsx (ADMIN sees everything).
+  const allSidebarLinks = [
+    { id: 'home', label: 'Home', icon: Home, path: '/adminDashboard', roles: ['SUPERVISOR', 'INVENTORY', 'ACCOUNTING'] },
+    { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList', roles: ['SUPERVISOR', 'INVENTORY'] },
+    { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand', roles: ['INVENTORY', 'ACCOUNTING'] },
+    { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance', roles: ['ACCOUNTING'] },
+    { id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement', roles: [] },
   ];
+  const sidebarLinks = allSidebarLinks.filter(
+    (item) => user?.role === 'ADMIN' || item.roles.includes(user?.role)
+  );
 
   const handleNavClick = (item) => {
     if (item.id === 'users' && !isAdminAuthenticated) {
@@ -233,6 +238,14 @@ export default function Sidebar() {
 
         <div className={`flex gap-1.5 ${isSidebarCollapsed ? 'flex-col items-center' : 'flex-row'}`}>
           <button
+            onClick={() => setShowChangePassword(true)}
+            title="Change password"
+            className="flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-slate-700 bg-white/40 border border-white/60 hover:bg-white/70 transition-all"
+          >
+            <KeyRound className="w-4 h-4 text-slate-600 shrink-0" />
+            {!isSidebarCollapsed && <span>Password</span>}
+          </button>
+          <button
             onClick={handleLogout}
             className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-rose-700 bg-rose-500/10 border border-rose-200/50 hover:bg-rose-500/20 transition-all"
           >
@@ -241,6 +254,8 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
 
       {showAdminAuthModal && (
         <AdminAuthModal

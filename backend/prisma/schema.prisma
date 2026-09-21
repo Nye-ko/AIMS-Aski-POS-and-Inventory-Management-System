@@ -30,9 +30,19 @@ enum ReconciliationStatus {
 }
 
 enum OrderStatus {
+  DRAFT
   PENDING
   RECEIVED
   CANCELLED
+}
+
+enum StockMovementType {
+  OPENING
+  PURCHASE_RECEIPT
+  MANUAL_ADD
+  SALE
+  PURCHASE_RETURN
+  ADJUSTMENT
 }
 
 // MODELS
@@ -44,14 +54,19 @@ model User {
   password         String
   role             Role              @default(CASHIER)
   isActive         Boolean           @default(true)
+  pin              String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
-  transactions     Transaction[]
+  transactions         Transaction[] @relation("TransactionCashier")
+  approvedTransactions Transaction[] @relation("TransactionApprover")
   reconciliations  Reconciliation[]
   purchaseOrders   PurchaseOrder[]
   receivingReports ReceivingReport[]
   purchaseReturns  PurchaseReturn[]
+  stockMovements   StockMovement[]
+  auditActions     AuditLog[]      @relation("AuditActor")
+  auditTargets     AuditLog[]      @relation("AuditTarget")
 }
 
 model Supplier {
@@ -61,6 +76,7 @@ model Supplier {
   email            String?
   phone            String?
   address          String?
+  leadTimeDays     Int               @default(7) // days from placing an order to its arrival; drives reorder points
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -92,8 +108,32 @@ model Product {
   purchaseOrderItems   PurchaseOrderItem[]
   receivingReportItems ReceivingReportItem[]
   purchaseReturnItems  PurchaseReturnItem[]
+  stockMovements       StockMovement[]
 
   @@index([barcode, name])
+}
+
+// Append-only ledger: every change to Product.stock writes one row in the same DB transaction.
+model StockMovement {
+  id            Int               @id @default(autoincrement())
+  productId     Int
+  product       Product           @relation(fields: [productId], references: [id])
+
+  type          StockMovementType
+  quantity      Int               // signed change: + adds stock, - removes it
+  balanceAfter  Int
+  reason        String?
+  referenceType String?           // Transaction | ReceivingReport | PurchaseReturn
+  referenceId   Int?
+  referenceNo   String?
+
+  userId        Int?
+  user          User?             @relation(fields: [userId], references: [id])
+
+  createdAt     DateTime          @default(now())
+
+  @@index([productId, createdAt])
+  @@index([type, createdAt])
 }
 
 model Transaction {
@@ -107,7 +147,10 @@ model Transaction {
   paymentMethod        PaymentMethod     @default(CASH)
 
   cashierId            Int
-  cashier              User              @relation(fields: [cashierId], references: [id])
+  cashier              User              @relation("TransactionCashier", fields: [cashierId], references: [id])
+
+  approvedById         Int?
+  approvedBy           User?             @relation("TransactionApprover", fields: [approvedById], references: [id])
 
   createdAt            DateTime          @default(now())
 
@@ -164,7 +207,10 @@ model Reconciliation {
 
   status             ReconciliationStatus @default(COMPLETED)
   notes              String?              @db.Text
+  businessDate       String?
   createdAt          DateTime             @default(now())
+
+  @@index([cashierId, businessDate])
 }
 
 model PurchaseOrder {
@@ -174,6 +220,12 @@ model PurchaseOrder {
   terms       String?             @default("N/A")
   remarks     String?             @db.Text
   preparedBy  String?
+  shipTo          String?
+  shippingAddress String?
+  purpose         String?
+  tagging         String?             @default("Regular")
+  discount        Decimal             @default(0) @db.Decimal(10, 2)
+  // Net payable: (line subtotals + 12% VAT) - discount
   totalAmount Decimal             @db.Decimal(10, 2)
 
   supplierId  Int
@@ -270,4 +322,52 @@ model PurchaseReturnItem {
   quantity         Int
   unitCost         Decimal        @db.Decimal(10, 2)
   subtotal         Decimal        @db.Decimal(10, 2)
+}
+
+// Admin actions on user accounts. Username snapshots survive even if a user row is later removed.
+model AuditLog {
+  id             Int      @id @default(autoincrement())
+  action         String   // USER_CREATED | USER_ROLE_CHANGED | USER_ACTIVATED | USER_DEACTIVATED | USER_PIN_SET | USER_PIN_CLEARED | USER_PASSWORD_RESET
+  actorId        Int?
+  actor          User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorUsername  String
+  targetUserId   Int?
+  targetUser     User?    @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  targetUsername String?
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([targetUserId, createdAt])
+}
+
+// A forecast as the system stated it on one store-local day, kept so it can be graded against what
+// actually sold. Deliberately no foreign keys to Product: this is history and must survive product
+// changes; the seeder clears it together with the sales it was graded against.
+model ForecastSnapshot {
+  id            Int                    @id @default(autoincrement())
+  asOf          DateTime               @db.Date // store-local "today"; the forecast used sales up to the day before
+  model         String                 // engine@version, e.g. rate-mean@1.0.0
+  source        String                 // ai-service | fallback
+  revenue7      Decimal                @db.Decimal(12, 2) // forecast gross revenue, first 7 days from asOf
+  revenue30     Decimal                @db.Decimal(12, 2) // forecast gross revenue, first 30 days from asOf
+  createdAt     DateTime               @default(now())
+
+  items         ForecastSnapshotItem[]
+
+  @@unique([asOf, model])
+}
+
+model ForecastSnapshotItem {
+  id           Int              @id @default(autoincrement())
+  snapshotId   Int
+  snapshot     ForecastSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  productId    Int
+  sku          String
+  forecast7    Float            // forecast units over the 7 days from asOf
+  confidence   String
+
+  @@unique([snapshotId, productId])
 }

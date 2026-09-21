@@ -94,8 +94,8 @@ async function buildPurchaseOrderWorkbook(po) {
   // --- Supplier / Ship To block ---
   const supplierStart = row;
   const supplierRows = [
-    ['Supplier Name :', po.supplier?.name || '', 'Ship To :', COMPANY.name],
-    ['Address :', po.supplier?.address || '-', 'Address :', COMPANY.address],
+    ['Supplier Name :', po.supplier?.name || '', 'Ship To :', po.shipTo || COMPANY.name],
+    ['Address :', po.supplier?.address || '-', 'Address :', po.shippingAddress || COMPANY.address],
     ['Contact Person :', po.supplier?.contactPerson || '-', '', ''],
     ['Contact No. :', po.supplier?.phone || '-', '', ''],
   ];
@@ -166,7 +166,9 @@ async function buildPurchaseOrderWorkbook(po) {
     row++;
   });
 
-  const netAmount = Number((totalPrice + totalVat).toFixed(2));
+  const totalAmount = Number((totalPrice + totalVat).toFixed(2));
+  const discount = Number(po.discount || 0);
+  const netAmount = Number((totalAmount - discount).toFixed(2));
 
   // --- Footer: notify note on the left, totals on the right ---
   const footerStart = row;
@@ -179,8 +181,8 @@ async function buildPurchaseOrderWorkbook(po) {
     ['TOTAL QUANTITY', totalQty],
     ['TOTAL VAT', money(totalVat)],
     ['TOTAL PRICE', money(totalPrice)],
-    ['TOTAL AMOUNT', money(netAmount)],
-    ['LESS: DISCOUNT', money(0)],
+    ['TOTAL AMOUNT', money(totalAmount)],
+    ['LESS: DISCOUNT', money(discount)],
     ['NET AMOUNT', money(netAmount)],
   ];
   totalsRows.forEach(([label, value]) => {
@@ -202,7 +204,8 @@ async function buildPurchaseOrderWorkbook(po) {
   sheet.getCell(`A${row}`).value = 'REMARKS :';
   sheet.getCell(`A${row}`).font = { bold: true };
   sheet.mergeCells(`B${row}:I${row}`);
-  sheet.getCell(`B${row}`).value = po.remarks || '-';
+  sheet.getCell(`B${row}`).value =
+    [po.tagging && po.tagging !== 'Regular' ? `[${po.tagging}]` : '', po.purpose, po.remarks].filter(Boolean).join(' ') || '-';
   row += 2;
 
   // --- Signature lines ---

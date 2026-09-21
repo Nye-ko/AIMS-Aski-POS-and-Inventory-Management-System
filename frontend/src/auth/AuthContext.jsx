@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DEV_SUPERVISOR_PIN } from './devUsers';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const STORAGE_KEY = 'aims.auth';
@@ -57,17 +56,19 @@ export function AuthProvider({ children }) {
     if (!res.ok) throw new Error(body.error || 'Invalid username or password.');
 
     const authed = { token: body.token, ...body.user };
+    // Persist synchronously so the first requests of the next page (which read
+    // the token from storage) don't race the effect below.
+    writeStoredUser(authed);
     setSession(authed);
     setIsAdminAuthenticated(false);
     return authed;
   }, []);
 
   const logout = useCallback(() => {
+    writeStoredUser(null);
     setSession(null);
     setIsAdminAuthenticated(false);
   }, []);
-
-  const authorizeSupervisor = useCallback((pin) => pin === DEV_SUPERVISOR_PIN, []);
 
   const verifyAdminPassword = useCallback(
     async (password) => {
@@ -105,10 +106,9 @@ export function AuthProvider({ children }) {
       isAdminAuthenticated,
       login,
       logout,
-      authorizeSupervisor,
       verifyAdminPassword,
     };
-  }, [session, isAdminAuthenticated, login, logout, authorizeSupervisor, verifyAdminPassword]);
+  }, [session, isAdminAuthenticated, login, logout, verifyAdminPassword]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

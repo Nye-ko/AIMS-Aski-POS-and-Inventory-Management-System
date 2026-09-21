@@ -4,6 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { io } from 'socket.io-client';
 import NotificationPanel from './NotificationPanel';
 import { useAlertNotifications } from '../../hooks/useAlertNotifications';
+import { apiFetch, getAuthToken } from '../../auth/apiFetch';
 
 const SOCKET_SERVER_URL = 'http://localhost:5000';
 
@@ -41,7 +42,7 @@ export default function Dashboard() {
   const sendLowStockAlert = async () => {
     setSendingLowStock(true);
     try {
-      const res = await fetch(`${SOCKET_SERVER_URL}/api/alerts/low-stock/send-now`, { method: 'POST' });
+      const res = await apiFetch(`${SOCKET_SERVER_URL}/api/alerts/low-stock/send-now`, { method: 'POST' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
       if (body.count === 0) flashAlert('info', 'No low-stock items right now — nothing to email.');
@@ -56,7 +57,7 @@ export default function Dashboard() {
   const sendExpiryAlert = async () => {
     setSendingExpiry(true);
     try {
-      const res = await fetch(`${SOCKET_SERVER_URL}/api/alerts/expiry/send-now`, { method: 'POST' });
+      const res = await apiFetch(`${SOCKET_SERVER_URL}/api/alerts/expiry/send-now`, { method: 'POST' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
       if (body.count === 0) flashAlert('info', 'No products in the expiry window — nothing to email.');
@@ -71,7 +72,7 @@ export default function Dashboard() {
   const sendForecastEmail = async () => {
     setSendingForecast(true);
     try {
-      const res = await fetch(`${SOCKET_SERVER_URL}/api/alerts/forecast/send-now`, { method: 'POST' });
+      const res = await apiFetch(`${SOCKET_SERVER_URL}/api/alerts/forecast/send-now`, { method: 'POST' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
       if (body.skipped) flashAlert('info', 'No forecast data to email right now.');
@@ -85,7 +86,7 @@ export default function Dashboard() {
 
   const fetchForecast = async () => {
     try {
-      const res = await fetch(`${SOCKET_SERVER_URL}/api/forecast?days=30`);
+      const res = await apiFetch(`${SOCKET_SERVER_URL}/api/forecast?days=30`);
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.message || `Forecast failed (${res.status})`);
       setForecast(body.data);
@@ -101,14 +102,11 @@ export default function Dashboard() {
     // Initial REST fetch for dashboard data
     const fetchDashboardData = async () => {
       try {
-        const [txRes, summaryRes] = await Promise.all([
-          fetch(`${SOCKET_SERVER_URL}/api/transactions`),
-          fetch(`${SOCKET_SERVER_URL}/api/dashboard/summary`)
-        ])
-        const txData = await txRes.json();
+        const summaryRes = await apiFetch(`${SOCKET_SERVER_URL}/api/dashboard/summary`);
+        if (!summaryRes.ok) throw new Error(`Dashboard summary failed (${summaryRes.status})`);
         const summaryData = await summaryRes.json();
 
-        setRecentTransactions(txData.slice(0, 5));
+        setRecentTransactions(summaryData.recentTransactions || []);
         setTodayRevenue(Number(summaryData.todayRevenue));
         setLowStockCount(Number(summaryData.lowStockCount));
         setDailySalesData(summaryData.dailySalesTrend);
@@ -125,13 +123,13 @@ export default function Dashboard() {
     fetchForecast();
 
     //Connect to Socket.io server
-    const socket = io(SOCKET_SERVER_URL);
+    const socket = io(SOCKET_SERVER_URL, { auth: { token: getAuthToken() } });
 
     socket.on('transaction_created', (newTx) => {
       setRecentTransactions((prev) => [newTx, ...prev.slice(0, 4)]);
       setTodayRevenue((prev) => prev + Number(newTx.totalAmount));
 
-      fetch(`${SOCKET_SERVER_URL}/api/dashboard/summary`)
+      apiFetch(`${SOCKET_SERVER_URL}/api/dashboard/summary`)
         .then((res) => res.json())
         .then((data) => setLowStockCount(data.lowStockCount))
         .catch(console.error);

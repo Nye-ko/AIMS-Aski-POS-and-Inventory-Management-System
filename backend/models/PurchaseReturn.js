@@ -1,4 +1,6 @@
 const { prisma } = require('./Product');
+const { PurchasingError } = require('./PurchaseOrder');
+const { changeStock, StockError } = require('./stockLedger');
 
 // PR-YYYYMMDD-#### — date-stamped, uniqueness guaranteed by the row's own id
 const generatePrNumber = (id, date) => {
@@ -8,19 +10,23 @@ const generatePrNumber = (id, date) => {
   return `PR-${y}${m}${d}-${String(id).padStart(4, '0')}`;
 };
 
+const returnInclude = {
+  supplier: true,
+  receivingReport: true,
+  createdBy: { select: { username: true } },
+  items: { include: { product: true } },
+};
+
 const PurchaseReturnModel = {
   // File a Purchase Return against a Receiving Report: records what's being sent back
   // and decrements product stock by the returned quantity (cost price is left untouched).
+  // Returns are capped at what was received minus everything already returned on that report.
   create: async ({ receivingReportId, items, reason, remarks, createdById }) => {
-    if (!receivingReportId) throw new Error('receivingReportId is required');
-    if (!Array.isArray(items) || items.length === 0) throw new Error('At least one returned item is required');
-    if (!reason) throw new Error('A reason for the return is required');
-
-    const receivingReport = await prisma.receivingReport.findUnique({
-      where: { id: Number(receivingReportId) },
-      include: { items: { include: { product: true } } },
-    });
-    if (!receivingReport) throw new Error('Receiving report not found');
+    const rrId = parseInt(receivingReportId, 10);
+    if (!rrId) throw new PurchasingError(400, 'receivingReportId is required');
+    if (!Array.isArray(items) || items.length === 0) throw new PurchasingError(400, 'At least one returned item is required');
+    const cleanReason = typeof reason === 'string' ? reason.trim().slice(0, 255) : '';
+    if (!cleanReason) throw new PurchasingError(400, 'A reason for the return is required');
 
     // createdById is set by the route handler from the authenticated user's
     // JWT — verify it still resolves to a real user.
@@ -28,77 +34,113 @@ const PurchaseReturnModel = {
     const userExists = await prisma.user.findUnique({ where: { id: validCreatedById } });
     if (!userExists) throw new Error('Authenticated user no longer exists.');
 
-    const lineItems = items.map((item) => {
+    const seen = new Set();
+    const requested = items.map((item) => {
+      const productId = parseInt(item.productId, 10);
       const quantity = parseInt(item.quantity, 10);
-      if (!item.productId || !quantity || quantity <= 0) {
-        throw new Error('Each returned item requires a valid productId and quantity');
+      if (!productId || !(quantity > 0)) {
+        throw new PurchasingError(400, 'Each returned item requires a valid productId and quantity');
       }
-
-      const receivedItem = receivingReport.items.find((ri) => ri.productId === Number(item.productId));
-      if (!receivedItem) {
-        throw new Error(`Product ${item.productId} was not part of receiving report ${receivingReport.rrNumber}`);
-      }
-      if (quantity > receivedItem.quantity) {
-        throw new Error(`Cannot return ${quantity} of "${receivedItem.product.name}" — only ${receivedItem.quantity} were received on this report`);
-      }
-      if (quantity > receivedItem.product.stock) {
-        throw new Error(`Cannot return ${quantity} of "${receivedItem.product.name}" — only ${receivedItem.product.stock} currently in stock`);
-      }
-
-      const unitCost = Number(receivedItem.unitCost);
-      return {
-        productId: Number(item.productId),
-        quantity,
-        unitCost,
-        subtotal: Number((quantity * unitCost).toFixed(2)),
-      };
+      if (seen.has(productId)) throw new PurchasingError(400, 'A product can only appear once on a purchase return');
+      seen.add(productId);
+      return { productId, quantity };
     });
 
-    const result = await prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx) => {
+      // Lock the receiving report so concurrent returns against it are checked one at a time.
+      const locked = await tx.$queryRaw`SELECT id FROM "ReceivingReport" WHERE id = ${rrId} FOR UPDATE`;
+      if (locked.length === 0) throw new PurchasingError(404, 'Receiving report not found');
+
+      const receivingReport = await tx.receivingReport.findUnique({
+        where: { id: rrId },
+        include: { items: { include: { product: true } } },
+      });
+      const priorReturns = await tx.purchaseReturnItem.groupBy({
+        by: ['productId'],
+        where: { purchaseReturn: { receivingReportId: rrId } },
+        _sum: { quantity: true },
+      });
+      const alreadyReturned = new Map(priorReturns.map((r) => [r.productId, r._sum.quantity || 0]));
+
+      const lineItems = requested.map(({ productId, quantity }) => {
+        const receivedItem = receivingReport.items.find((ri) => ri.productId === productId);
+        if (!receivedItem) {
+          throw new PurchasingError(400, `Product ${productId} was not part of receiving report ${receivingReport.rrNumber}`);
+        }
+        const returnable = receivedItem.quantity - (alreadyReturned.get(productId) || 0);
+        if (quantity > returnable) {
+          throw new PurchasingError(
+            409,
+            `Cannot return ${quantity} of "${receivedItem.product.name}" — only ${Math.max(returnable, 0)} of the ${receivedItem.quantity} received on ${receivingReport.rrNumber} can still be returned`,
+          );
+        }
+
+        const unitCostCents = Math.round(Number(receivedItem.unitCost) * 100);
+        return {
+          productId,
+          quantity,
+          unitCost: unitCostCents / 100,
+          subtotal: (quantity * unitCostCents) / 100,
+          productName: receivedItem.product.name,
+        };
+      });
+
       const created = await tx.purchaseReturn.create({
         data: {
-          returnNo: `TEMP-${Date.now()}`,
+          returnNo: `TEMP-${Date.now()}-${rrId}`,
           receivingReportId: receivingReport.id,
           supplierId: receivingReport.supplierId,
           createdById: validCreatedById,
           terms: receivingReport.terms,
-          reason,
-          remarks: remarks || null,
-          items: { create: lineItems },
+          reason: cleanReason,
+          remarks: typeof remarks === 'string' && remarks.trim() ? remarks.trim().slice(0, 1000) : null,
+          items: { create: lineItems.map(({ productName, ...line }) => line) },
         },
       });
 
+      const returnNo = generatePrNumber(created.id, created.createdAt);
+
+      // Guarded decrement (logged in the ledger): a return can never push stock below zero,
+      // even if sales happen meanwhile.
       for (const item of lineItems) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
+        try {
+          await changeStock(tx, {
+            productId: item.productId,
+            delta: -item.quantity,
+            type: 'PURCHASE_RETURN',
+            reason: `Returned to supplier: ${cleanReason}`,
+            referenceType: 'PurchaseReturn',
+            referenceId: created.id,
+            referenceNo: returnNo,
+            userId: validCreatedById,
+          });
+        } catch (error) {
+          if (error instanceof StockError && error.code === 'INSUFFICIENT_STOCK') {
+            throw new PurchasingError(409, `Cannot return ${item.quantity} of "${item.productName}" — not enough currently in stock`);
+          }
+          throw error;
+        }
       }
 
       return tx.purchaseReturn.update({
         where: { id: created.id },
-        data: { returnNo: generatePrNumber(created.id, created.createdAt) },
-        include: {
-          supplier: true,
-          receivingReport: true,
-          createdBy: { select: { username: true } },
-          items: { include: { product: true } },
-        },
+        data: { returnNo },
+        include: returnInclude,
       });
     });
-
-    return result;
   },
 
   findById: async (id) => {
     return prisma.purchaseReturn.findUnique({
       where: { id: parseInt(id) },
-      include: {
-        supplier: true,
-        receivingReport: true,
-        createdBy: { select: { username: true } },
-        items: { include: { product: true } },
-      },
+      include: returnInclude,
+    });
+  },
+
+  findAll: async () => {
+    return prisma.purchaseReturn.findMany({
+      include: returnInclude,
+      orderBy: { createdAt: 'desc' },
     });
   },
 };

@@ -4,11 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { X, RotateCcw, Loader2, Inbox, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
+import { apiFetch } from '../../auth/apiFetch';
+
 const API_BASE_URL = 'http://localhost:5000/api';
 const REASON_OPTIONS = ['Damaged', 'Expired', 'Incorrect Item', 'Overstock', 'Retail'];
 
 async function downloadPurchaseReturnFile(purchaseReturn) {
-  const res = await fetch(`${API_BASE_URL}/purchase-returns/${purchaseReturn.id}/export`);
+  const res = await apiFetch(`${API_BASE_URL}/purchase-returns/${purchaseReturn.id}/export`);
   if (!res.ok) throw new Error(`Failed to export ${purchaseReturn.returnNo}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -28,10 +30,11 @@ const buildLineItems = (rr) =>
     name: it.product.name,
     unit: it.product.unit || 'PC/S',
     receivedQty: it.quantity,
+    returnableQty: it.returnableQuantity ?? it.quantity,
     currentStock: it.product.stock,
     unitCost: Number(it.unitCost),
     checked: false,
-    quantity: Math.min(it.quantity, it.product.stock) || 0,
+    quantity: Math.min(it.returnableQuantity ?? it.quantity, it.product.stock) || 0,
   }));
 
 export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
@@ -53,7 +56,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
     setIsLoadingList(true);
     setListError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/receiving-reports`);
+      const res = await apiFetch(`${API_BASE_URL}/receiving-reports`);
       if (!res.ok) throw new Error('Failed to load receiving reports');
       setReceivingReports(await res.json());
     } catch (err) {
@@ -251,13 +254,14 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                     <th className="p-2 w-8"></th>
                     <th className="p-2">Product</th>
                     <th className="p-2 text-center">Received</th>
+                    <th className="p-2 text-center">Returnable</th>
                     <th className="p-2 text-center">In Stock</th>
                     <th className="p-2 text-center w-24">Qty to Return</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {items.map((item) => {
-                    const maxQty = Math.min(item.receivedQty, item.currentStock);
+                    const maxQty = Math.min(item.returnableQty, item.currentStock);
                     return (
                       <tr key={item.productId} className={!item.checked ? 'opacity-40' : ''}>
                         <td className="p-2">
@@ -273,6 +277,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                           <p className="text-[10px] text-slate-400 font-mono">{item.barcode}</p>
                         </td>
                         <td className="p-2 text-center text-slate-500">{item.receivedQty} {item.unit}</td>
+                        <td className="p-2 text-center text-slate-500">{item.returnableQty}</td>
                         <td className="p-2 text-center text-slate-500">{item.currentStock}</td>
                         <td className="p-2">
                           <input

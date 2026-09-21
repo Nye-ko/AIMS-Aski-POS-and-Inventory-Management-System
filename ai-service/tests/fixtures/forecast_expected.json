@@ -1,0 +1,688 @@
+{
+ "kpis": {
+  "projectedGross": 7260.26,
+  "projectedGrossLow": 5380.84,
+  "projectedGrossHigh": 9139.67,
+  "projectedNet": 7136.58,
+  "projectedDiscounts": 123.68,
+  "discountRatePct": 1.7,
+  "grossGrowth": "-0.5%",
+  "highRiskSKUs": 3,
+  "horizonDays": 30
+ },
+ "revenueTrajectory": [
+  {
+   "day": "Aug 22",
+   "date": "2026-08-22",
+   "actual": 460.75,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 23",
+   "date": "2026-08-23",
+   "actual": 150.0,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 24",
+   "date": "2026-08-24",
+   "actual": 200.0,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 25",
+   "date": "2026-08-25",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 26",
+   "date": "2026-08-26",
+   "actual": 183.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 27",
+   "date": "2026-08-27",
+   "actual": 594.08,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 28",
+   "date": "2026-08-28",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 29",
+   "date": "2026-08-29",
+   "actual": 183.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 30",
+   "date": "2026-08-30",
+   "actual": 233.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Aug 31",
+   "date": "2026-08-31",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 01",
+   "date": "2026-09-01",
+   "actual": 544.08,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 02",
+   "date": "2026-09-02",
+   "actual": 233.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 03",
+   "date": "2026-09-03",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 04",
+   "date": "2026-09-04",
+   "actual": 183.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 05",
+   "date": "2026-09-05",
+   "actual": 233.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 06",
+   "date": "2026-09-06",
+   "actual": 494.08,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 07",
+   "date": "2026-09-07",
+   "actual": 183.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 08",
+   "date": "2026-09-08",
+   "actual": 233.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 09",
+   "date": "2026-09-09",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 10",
+   "date": "2026-09-10",
+   "actual": 183.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 11",
+   "date": "2026-09-11",
+   "actual": 594.08,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 12",
+   "date": "2026-09-12",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 13",
+   "date": "2026-09-13",
+   "actual": 183.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 14",
+   "date": "2026-09-14",
+   "actual": 233.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 15",
+   "date": "2026-09-15",
+   "actual": 133.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 16",
+   "date": "2026-09-16",
+   "actual": 554.08,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 17",
+   "date": "2026-09-17",
+   "actual": 243.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 18",
+   "date": "2026-09-18",
+   "actual": 143.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 19",
+   "date": "2026-09-19",
+   "actual": 193.33,
+   "forecast": null,
+   "forecastLow": null,
+   "forecastHigh": null
+  },
+  {
+   "day": "Sep 20",
+   "date": "2026-09-20",
+   "actual": 243.33,
+   "forecast": 243.33,
+   "forecastLow": 243.33,
+   "forecastHigh": 243.33
+  },
+  {
+   "day": "Sep 21",
+   "date": "2026-09-21",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 22",
+   "date": "2026-09-22",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 23",
+   "date": "2026-09-23",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 24",
+   "date": "2026-09-24",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 25",
+   "date": "2026-09-25",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 26",
+   "date": "2026-09-26",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 27",
+   "date": "2026-09-27",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 28",
+   "date": "2026-09-28",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 29",
+   "date": "2026-09-29",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Sep 30",
+   "date": "2026-09-30",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 01",
+   "date": "2026-10-01",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 02",
+   "date": "2026-10-02",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 03",
+   "date": "2026-10-03",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 04",
+   "date": "2026-10-04",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 05",
+   "date": "2026-10-05",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 06",
+   "date": "2026-10-06",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 07",
+   "date": "2026-10-07",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 08",
+   "date": "2026-10-08",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 09",
+   "date": "2026-10-09",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 10",
+   "date": "2026-10-10",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 11",
+   "date": "2026-10-11",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 12",
+   "date": "2026-10-12",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 13",
+   "date": "2026-10-13",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 14",
+   "date": "2026-10-14",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 15",
+   "date": "2026-10-15",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 16",
+   "date": "2026-10-16",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 17",
+   "date": "2026-10-17",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 18",
+   "date": "2026-10-18",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 19",
+   "date": "2026-10-19",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  },
+  {
+   "day": "Oct 20",
+   "date": "2026-10-20",
+   "actual": null,
+   "forecast": 242.01,
+   "forecastLow": 41.66,
+   "forecastHigh": 442.35
+  }
+ ],
+ "categoryBreakdown": [
+  {
+   "category": "Dairy",
+   "projectedRevenue": 5338.59,
+   "percentShare": 73.5
+  },
+  {
+   "category": "Hardware",
+   "projectedRevenue": 1869.84,
+   "percentShare": 25.8
+  },
+  {
+   "category": "Pantry",
+   "projectedRevenue": 51.83,
+   "percentShare": 0.7
+  },
+  {
+   "category": "Uncategorized",
+   "projectedRevenue": 0.0,
+   "percentShare": 0.0
+  }
+ ],
+ "skuDemandList": [
+  {
+   "id": 1,
+   "sku": "STEADY-1",
+   "name": "Steady Seller",
+   "category": "Dairy",
+   "stock": 40,
+   "minStock": 10,
+   "dailyDemand": 3.0,
+   "forecast7Day": 21.0,
+   "forecast7Low": 14.3,
+   "forecast7High": 27.7,
+   "forecastHorizon": 90.0,
+   "leadTimeDays": 14,
+   "onOrder": 0,
+   "safetyStock": 13.4,
+   "reorderPoint": 56,
+   "orderUpTo": 81,
+   "reorderQty": 41,
+   "daysOfCover": 13.3,
+   "status": "REORDER NOW",
+   "confidence": "medium",
+   "dataDays": 24,
+   "stockoutDays": 4,
+   "stockoutAdjusted": true
+  },
+  {
+   "id": 5,
+   "sku": "EXP-1",
+   "name": "Expiring Soon",
+   "category": "Dairy",
+   "stock": 60,
+   "minStock": 10,
+   "dailyDemand": 0.96,
+   "forecast7Day": 6.8,
+   "forecast7Low": 3.0,
+   "forecast7High": 10.5,
+   "forecastHorizon": 28.9,
+   "leadTimeDays": 3,
+   "onOrder": 0,
+   "safetyStock": 2.9,
+   "reorderPoint": 10,
+   "orderUpTo": 16,
+   "reorderQty": 0,
+   "daysOfCover": 62.2,
+   "status": "EXPIRY RISK",
+   "confidence": "high",
+   "dataDays": 28,
+   "stockoutDays": 0,
+   "stockoutAdjusted": false
+  },
+  {
+   "id": 6,
+   "sku": "OLD-1",
+   "name": "Already Expired",
+   "category": "Uncategorized",
+   "stock": 5,
+   "minStock": 5,
+   "dailyDemand": 0.0,
+   "forecast7Day": 0.0,
+   "forecast7Low": 0.0,
+   "forecast7High": 0.0,
+   "forecastHorizon": 0.0,
+   "leadTimeDays": 7,
+   "onOrder": 0,
+   "safetyStock": 0.0,
+   "reorderPoint": 5,
+   "orderUpTo": 5,
+   "reorderQty": 5,
+   "daysOfCover": null,
+   "status": "EXPIRY RISK",
+   "confidence": "high",
+   "dataDays": 28,
+   "stockoutDays": 0,
+   "stockoutAdjusted": false
+  },
+  {
+   "id": 4,
+   "sku": "DEAD-1",
+   "name": "Never Sold",
+   "category": "Pantry",
+   "stock": 12,
+   "minStock": 5,
+   "dailyDemand": 0.0,
+   "forecast7Day": 0.0,
+   "forecast7Low": 0.0,
+   "forecast7High": 0.0,
+   "forecastHorizon": 0.0,
+   "leadTimeDays": 7,
+   "onOrder": 0,
+   "safetyStock": 0.0,
+   "reorderPoint": 5,
+   "orderUpTo": 5,
+   "reorderQty": 0,
+   "daysOfCover": null,
+   "status": "HEALTHY",
+   "confidence": "high",
+   "dataDays": 28,
+   "stockoutDays": 0,
+   "stockoutAdjusted": false
+  },
+  {
+   "id": 3,
+   "sku": "NEW-1",
+   "name": "New Product",
+   "category": "Pantry",
+   "stock": 4,
+   "minStock": 5,
+   "dailyDemand": 1.0,
+   "forecast7Day": 7.0,
+   "forecast7Low": 1.7,
+   "forecast7High": 12.3,
+   "forecastHorizon": 30.0,
+   "leadTimeDays": 7,
+   "onOrder": 20,
+   "safetyStock": 6.7,
+   "reorderPoint": 14,
+   "orderUpTo": 26,
+   "reorderQty": 0,
+   "daysOfCover": 4.0,
+   "status": "HEALTHY",
+   "confidence": "low",
+   "dataDays": 5,
+   "stockoutDays": 0,
+   "stockoutAdjusted": false
+  },
+  {
+   "id": 2,
+   "sku": "SPARSE-1",
+   "name": "Sparse Seller",
+   "category": "Hardware",
+   "stock": 30,
+   "minStock": 5,
+   "dailyDemand": 0.54,
+   "forecast7Day": 3.8,
+   "forecast7Low": 0.0,
+   "forecast7High": 8.2,
+   "forecastHorizon": 16.1,
+   "leadTimeDays": 7,
+   "onOrder": 0,
+   "safetyStock": 5.7,
+   "reorderPoint": 10,
+   "orderUpTo": 17,
+   "reorderQty": 0,
+   "daysOfCover": 56.0,
+   "status": "HEALTHY",
+   "confidence": "high",
+   "dataDays": 28,
+   "stockoutDays": 0,
+   "stockoutAdjusted": false
+  }
+ ],
+ "meta": {
+  "source": "ai-service",
+  "engine": "rate-mean",
+  "engineVersion": "2.1.0",
+  "asOf": "2026-09-21",
+  "timezone": "Asia/Manila",
+  "historyDays": 180,
+  "observedDays": 45,
+  "rateWindowDays": 28,
+  "revenueWindowDays": 14,
+  "rangeLevel": 0.8,
+  "serviceLevel": 0.95,
+  "reviewDays": 7,
+  "skuCount": 6,
+  "lowData": false,
+  "warnings": [
+   "1 sales rows ignored (unknown product)."
+  ]
+ }
+}

@@ -23,6 +23,8 @@ async function seedData() {
     await prisma.transactionItem.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.reconciliation.deleteMany();
+    await prisma.stockMovement.deleteMany();
+    await prisma.forecastSnapshot.deleteMany(); // saved forecasts refer to the sales being wiped
     await prisma.product.deleteMany();
     await prisma.supplier.deleteMany();
     await prisma.user.deleteMany();
@@ -32,7 +34,7 @@ async function seedData() {
     // documented dev accounts in frontend/src/auth/devUsers.js)
     const seedUsers = [
       { username: 'admin', password: 'admin123', role: 'ADMIN' },
-      { username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR' },
+      { username: 'supervisor', password: 'supervisor123', role: 'SUPERVISOR', pin: '1234' },
       { username: 'cashier', password: 'cashier123', role: 'CASHIER' },
       { username: 'accounting', password: 'accounting123', role: 'ACCOUNTING' },
       { username: 'inventory', password: 'inventory123', role: 'INVENTORY' },
@@ -42,7 +44,12 @@ async function seedData() {
     for (const u of seedUsers) {
       const hashedPassword = await bcrypt.hash(u.password, 10);
       usersByUsername[u.username] = await prisma.user.create({
-        data: { username: u.username, password: hashedPassword, role: u.role },
+        data: {
+          username: u.username,
+          password: hashedPassword,
+          role: u.role,
+          pin: u.pin ? await bcrypt.hash(u.pin, 10) : null,
+        },
       });
     }
     const cashier = usersByUsername.cashier;
@@ -77,6 +84,15 @@ async function seedData() {
 
     await prisma.product.createMany({ data: productsData });
     const dbProducts = await prisma.product.findMany();
+    await prisma.stockMovement.createMany({
+      data: dbProducts.map((p) => ({
+        productId: p.id,
+        type: 'OPENING',
+        quantity: p.stock,
+        balanceAfter: p.stock,
+        reason: 'Opening balance (seed)',
+      })),
+    });
     console.log('Products seeded.');
 
     // 4. Seed 30 Days of Transactions & Reconciliations

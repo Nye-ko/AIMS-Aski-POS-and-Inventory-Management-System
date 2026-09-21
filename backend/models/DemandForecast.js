@@ -1,119 +1,156 @@
-const { ProductModel, prisma } = require('./Product');
-const axios = require('axios');
+const { prisma } = require('./Product');
+const { buildForecast } = require('../services/forecastEngine');
+const { postJson, createBreaker } = require('../services/aiClient');
+const { createCache } = require('../services/forecastCache');
+const { loadDailySales } = require('./salesHistory');
+const { loadStockoutDays } = require('./stockHistory');
 
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || 'http://localhost:8000/api/v1/forecast';
+const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS) || 5000;
+const AI_RETRIES = 1;
+// After 3 failed calls in a row the AI service is skipped for a minute instead of costing every request 10s.
+const aiBreaker = createBreaker({ threshold: 3, cooldownMs: 60000 });
+const CACHE_MS = (Number(process.env.FORECAST_CACHE_SECONDS) >= 0 ? Number(process.env.FORECAST_CACHE_SECONDS) : 300) * 1000;
+const FALLBACK_CACHE_MS = Math.min(CACHE_MS, 30000); // retry the AI service soon
+const forecastCache = createCache({ ttlMs: CACHE_MS });
+const HISTORY_DAYS = Number(process.env.FORECAST_HISTORY_DAYS) || 180;
+// Stock-out days are only needed for recent demand (a 28-day window, plus the backtest's replays), so
+// only this many days back are sent; a product stuck at zero stock would otherwise add a row per day.
+const STOCKOUT_LOOKBACK_DAYS = 90;
+const DEFAULT_LEAD_TIME_DAYS = 7; // products without a supplier
+const MIN_HORIZON_DAYS = 1;
+const MAX_HORIZON_DAYS = 365;
+const MS_PER_DAY = 86400000;
 
-const getForecastData = async (daysToForecast = 30) => {
-  // 1. Fetch sales items joining their parent Transaction for createdAt date
-  const transactionItems = await prisma.transactionItem.findMany({
-    take: 1000,
-    orderBy: {
-      transaction: {
-        createdAt: 'desc'
-      }
-    },
-    select: {
-      name: true,
-      quantity: true,
-      unitPrice: true,
-      transaction: {
-        select: {
-          createdAt: true
-        }
+// Sales are bucketed into calendar days in the store's own time zone, not UTC, so a 7am sale in
+// Manila counts toward that day's total instead of the previous one.
+const resolveTimeZone = () => {
+  const wanted = process.env.STORE_TIMEZONE || process.env.TZ || 'Asia/Manila';
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: wanted });
+    return wanted;
+  } catch {
+    return 'Asia/Manila';
+  }
+};
+const STORE_TIMEZONE = resolveTimeZone();
+
+const localDate = (instant, timeZone) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
+
+const clampHorizon = (value) => {
+  const n = Math.trunc(Number(value));
+  if (!Number.isFinite(n)) return 30;
+  return Math.min(MAX_HORIZON_DAYS, Math.max(MIN_HORIZON_DAYS, n));
+};
+
+// Everything the forecast needs, aggregated in SQL: one row per product per day, and one row per day.
+const loadForecastInput = async (daysToForecast, asOf) => {
+  const timeZone = STORE_TIMEZONE;
+  // Coarse UTC lower bound (a couple of days of slack); the engine applies the exact window.
+  const lowerBound = new Date(Date.parse(`${asOf}T00:00:00Z`) - (HISTORY_DAYS + 2) * MS_PER_DAY);
+
+  const stockoutFrom = new Date(Date.parse(`${asOf}T00:00:00Z`) - (STOCKOUT_LOOKBACK_DAYS + 2) * MS_PER_DAY);
+  const [products, { salesRows, totalRows }, stockoutsByProduct, pendingOrders] = await Promise.all([
+    prisma.product.findMany({
+      select: {
+        id: true, sku: true, name: true, category: true, stock: true, minStock: true, expiryDate: true, createdAt: true,
+        supplier: { select: { leadTimeDays: true } },
       },
-      product: {
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          stock: true,
-          expiryDate: true
-        }
-      }
-    }
+      orderBy: { id: 'asc' },
+    }),
+    loadDailySales({ since: lowerBound, timeZone }),
+    loadStockoutDays({
+      since: stockoutFrom,
+      timeZone,
+      fromDay: localDate(stockoutFrom, timeZone),
+      lastDay: new Date(Date.parse(`${asOf}T00:00:00Z`) - MS_PER_DAY).toISOString().slice(0, 10),
+    }),
+    // Units already ordered from suppliers but not yet received; draft orders are not commitments.
+    prisma.purchaseOrderItem.groupBy({
+      by: ['productId'],
+      where: { purchaseOrder: { status: 'PENDING' } },
+      _sum: { quantity: true },
+    }),
+  ]);
+  const onOrderByProduct = new Map(pendingOrders.map((r) => [r.productId, r._sum.quantity || 0]));
+
+  const skuById = new Map();
+  const productInputs = products.map((p) => {
+    const sku = p.sku || `PROD-${p.id}`;
+    skuById.set(p.id, sku);
+    return {
+      id: p.id,
+      sku,
+      name: p.name,
+      category: p.category,
+      stock: p.stock,
+      minStock: p.minStock,
+      // Expiry is a calendar date (stored as UTC midnight); creation is a real instant in store time.
+      expiryDate: p.expiryDate ? p.expiryDate.toISOString().slice(0, 10) : null,
+      createdAt: localDate(p.createdAt, timeZone),
+      leadTimeDays: p.supplier ? p.supplier.leadTimeDays : DEFAULT_LEAD_TIME_DAYS,
+      onOrder: onOrderByProduct.get(p.id) || 0,
+    };
   });
 
-  // 2. Map data to match FastAPI's TransactionItemInput schema
-  const historicalSales = transactionItems.map((item) => ({
-    sku: item.product?.sku || `PROD-${item.product?.id || '0'}`,
-    productName: item.product?.name || item.name,
-    quantity: item.quantity,
-    unitPrice: parseFloat(item.unitPrice),
-    createdAt: item.transaction.createdAt.toISOString(),
-    currentStock: item.product?.stock || 0,
-    expiryDate: item.product?.expiryDate
-      ? item.product.expiryDate.toISOString()
-      : null
-  }));
+  return {
+    asOf,
+    timezone: timeZone,
+    daysToForecast,
+    historyDays: HISTORY_DAYS,
+    products: productInputs,
+    sales: salesRows
+      .filter((r) => skuById.has(r.productId))
+      .map((r) => ({ sku: skuById.get(r.productId), date: r.date, quantity: r.quantity, revenue: r.revenue })),
+    dailyTotals: totalRows.map((r) => ({ date: r.date, gross: r.gross, discount: r.discount, net: r.net })),
+    stockouts: [...stockoutsByProduct]
+      .filter(([productId]) => skuById.has(productId))
+      .flatMap(([productId, dates]) => dates.map((date) => ({ sku: skuById.get(productId), date }))),
+  };
+};
+
+const looksLikeForecast = (data) =>
+  data &&
+  typeof data === 'object' &&
+  data.kpis &&
+  Array.isArray(data.revenueTrajectory) &&
+  Array.isArray(data.skuDemandList) &&
+  data.meta;
+
+const computeForecast = async (daysToForecast, today) => {
+  const input = await loadForecastInput(daysToForecast, today);
 
   try {
-    // 3. Request forecast payload using FastAPI's ForecastRequest schema
-    const aiResponse = await axios.post(PYTHON_AI_URL, {
-      daysToForecast: daysToForecast,
-      transactions: historicalSales
-    });
-
-    return aiResponse.data;
+    const response = await postJson(PYTHON_AI_URL, input, { timeoutMs: AI_TIMEOUT_MS, retries: AI_RETRIES, breaker: aiBreaker });
+    if (!looksLikeForecast(response.data)) throw new Error('AI service returned an unexpected response shape');
+    return response.data;
   } catch (error) {
-    console.warn('FastAPI Service unreachable. Falling back to internal JS forecast logic.');
-
-    // 4. Fallback JS calculation using active DB products
-    const products = await prisma.product.findMany();
-
-    const projectedGross = historicalSales.reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0) * 1.15;
-    const projectedDiscounts = projectedGross * 0.045;
-    const projectedNet = projectedGross - projectedDiscounts;
-
-    const skuDemandList = products.map((prod) => {
-      const dailyDemand = Math.floor(Math.random() * 8) + 1;
-      const forecast7Day = dailyDemand * 7;
-      const reorderQty = prod.stock < forecast7Day ? (forecast7Day - prod.stock) + 10 : 0;
-
-      let status = 'HEALTHY';
-      if (prod.stock < forecast7Day) {
-        status = 'REORDER NOW';
-      } else if (prod.expiryDate && new Date(prod.expiryDate) <= new Date(Date.now() + 15 * 86400000)) {
-        status = 'EXPIRY RISK';
-      }
-
-      return {
-        id: prod.id,
-        sku: prod.sku || `SKU-${prod.id}`,
-        name: prod.name,
-        stock: prod.stock,
-        dailyDemand,
-        forecast7Day,
-        reorderQty,
-        status
-      };
-    });
-
-    const highRiskSKUs = skuDemandList.filter((i) => i.status !== 'HEALTHY').length;
-
-    // Build timeline points for chart
-    const revenueTrajectory = Array.from({ length: 14 }).map((_, idx) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (7 - idx));
-      const isPast = idx < 7;
-      return {
-        day: date.toISOString().split('T')[0].substring(5),
-        actual: isPast ? Math.floor(Math.random() * 5000) + 2000 : null,
-        forecast: !isPast ? Math.floor(Math.random() * 6000) + 3000 : null
-      };
-    });
-
-    return {
-      kpis: {
-        projectedGross: Math.round(projectedGross),
-        projectedNet: Math.round(projectedNet),
-        projectedDiscounts: Math.round(projectedDiscounts),
-        grossGrowth: '+12.4%',
-        highRiskSKUs
-      },
-      revenueTrajectory,
-      skuDemandList
-    };
+    let detail = error.message;
+    if (error.response) {
+      detail = `HTTP ${error.response.status} ${JSON.stringify(error.response.data).slice(0, 300)}`;
+      if (error.response.status === 401) detail += ' - check that AI_SERVICE_KEY matches in backend/.env and ai-service/.env';
+    }
+    console.warn(`[forecast] AI service unavailable (${detail}). Using the built-in engine (same method, source: "fallback").`);
+    const result = buildForecast(input, { source: 'fallback' });
+    result.meta.generatedAt = new Date().toISOString();
+    return result;
   }
 };
 
-module.exports = { getForecastData };
+// `asOf` (YYYY-MM-DD, store-local "today") is injectable so a given day's forecast can be reproduced.
+// Results are cached for a few minutes (cleared by any successful write request, see index.js); `refresh`
+// skips the cache. `meta.cached` says whether this response came from it.
+const getForecastData = async (days = 30, { asOf, refresh = false } = {}) => {
+  const daysToForecast = clampHorizon(days);
+  const today = asOf || localDate(new Date(), STORE_TIMEZONE);
+  if (refresh) forecastCache.invalidate();
+  const { value, cached } = await forecastCache.get(`${today}|${daysToForecast}`, () => computeForecast(daysToForecast, today), {
+    ttlFor: (result) => (result.meta && result.meta.source === 'fallback' ? FALLBACK_CACHE_MS : CACHE_MS),
+  });
+  return { ...value, meta: { ...value.meta, cached } };
+};
+
+const invalidateForecastCache = () => forecastCache.invalidate();
+
+module.exports = { getForecastData, loadForecastInput, invalidateForecastCache, STORE_TIMEZONE, HISTORY_DAYS, PYTHON_AI_URL, localDate };
