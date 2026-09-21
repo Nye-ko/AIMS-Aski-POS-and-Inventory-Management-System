@@ -1,11 +1,43 @@
+import hmac
+import os
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Annotated, List, Optional
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import AfterValidator, BaseModel, Field
 
 from backtest import MAX_ORIGINS, run_backtest
 from forecast_engine import ENGINE_NAME, ENGINE_VERSION, build_forecast
+
+
+
+def _load_env_file(path: Path) -> None:
+    """Reads KEY=VALUE lines from ai-service/.env (if present) without overriding real environment variables."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_file(Path(__file__).with_name(".env"))
+
+
+def require_key(x_ai_key: Optional[str] = Header(default=None)) -> None:
+    """Optional shared secret: when AI_SERVICE_KEY is set, forecast calls must send it as X-AI-Key.
+    Unset means open, as before, so local setups keep working without configuration."""
+    expected = os.environ.get("AI_SERVICE_KEY", "")
+    if not expected:
+        return
+    if x_ai_key is None or not hmac.compare_digest(x_ai_key.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-AI-Key")
+
 
 app = FastAPI(title="AMPC POS AI Forecasting Microservice")
 
@@ -77,17 +109,18 @@ def health_check():
         "service": "AI Forecasting Engine",
         "engine": ENGINE_NAME,
         "engineVersion": ENGINE_VERSION,
+        "keyRequired": bool(os.environ.get("AI_SERVICE_KEY")),
     }
 
 
-@app.post("/api/v1/forecast")
+@app.post("/api/v1/forecast", dependencies=[Depends(require_key)])
 def generate_forecast(payload: ForecastRequest):
     result = build_forecast(payload.model_dump(), source="ai-service")
     result["meta"]["generatedAt"] = datetime.now(timezone.utc).isoformat()
     return result
 
 
-@app.post("/api/v1/backtest")
+@app.post("/api/v1/backtest", dependencies=[Depends(require_key)])
 def backtest(payload: BacktestRequest):
     """Replays the forecast engine over past days and grades it against what actually sold."""
     data = payload.model_dump()

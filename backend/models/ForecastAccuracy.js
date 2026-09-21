@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { postJson } = require('../services/aiClient');
 const { prisma } = require('./Product');
 const { loadDailySales } = require('./salesHistory');
 const { loadForecastInput, STORE_TIMEZONE, localDate, PYTHON_AI_URL } = require('./DemandForecast');
@@ -70,7 +70,7 @@ const getBacktest = async (today) => {
   }
   try {
     const input = await loadForecastInput(30, today);
-    const response = await axios.post(BACKTEST_URL, input, { timeout: BACKTEST_TIMEOUT_MS });
+    const response = await postJson(BACKTEST_URL, input, { timeoutMs: BACKTEST_TIMEOUT_MS, retries: 0 });
     if (!response.data || !response.data.units7) throw new Error('unexpected response shape');
     const value = { available: true, ...response.data };
     backtestCache = { key: today, at: Date.now(), value };

@@ -50,6 +50,16 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+// Any successful write (a sale, a stock change, a purchase order, a supplier edit...) makes the cached
+// forecast out of date, so the next forecast request recomputes.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    res.on('finish', () => {
+      if (res.statusCode < 400) DemandForecastModel.invalidateForecastCache();
+    });
+  }
+  next();
+});
 
 const server = http.createServer(app);
 
@@ -757,11 +767,11 @@ app.get('/api/dashboard/summary', authenticateToken, requireRole(...ROLES.DASHBO
 // --- AI FORECASTING ROUTE ---
 app.get('/api/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
-    const { days = 30, asOf } = req.query;
+    const { days = 30, asOf, refresh } = req.query;
     if (asOf !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(asOf))) {
       return res.status(400).json({ success: false, message: 'asOf must be a date like 2026-09-21.' });
     }
-    const forecastData = await DemandForecastModel.getForecastData(days, { asOf });
+    const forecastData = await DemandForecastModel.getForecastData(days, { asOf, refresh: refresh === '1' || refresh === 'true' });
     // Keep a copy of today's forecast so it can be graded later (no-op after the first request of the day).
     if (asOf === undefined) forecastSnapshots.saveFromRequest(forecastData);
 

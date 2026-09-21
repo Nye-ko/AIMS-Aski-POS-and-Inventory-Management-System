@@ -259,13 +259,16 @@ export default function Demand() {
   const [error, setError] = useState(null);
   const [accuracy, setAccuracy] = useState(null);
   const [accuracyFailed, setAccuracyFailed] = useState(false);
-  const fetchForecast = async () => {
+  // `refresh` skips the server's short-lived forecast cache (the Refresh and Retry buttons).
+  const fetchForecast = async (refresh = false) => {
     setLoading(true);
     setError(null);
     try {
       const days = demandMode === 'future' ? 60 : 30;
       // Fetching predictions from Express backend endpoint
-      const res = await axios.get(`http://localhost:5000/api/forecast?days=${days}`, { headers: authHeader() });
+      const res = await axios.get(`http://localhost:5000/api/forecast?days=${days}${refresh === true ? '&refresh=1' : ''}`, {
+        headers: authHeader(),
+      });
 
       if (res.data.success) {
         setForecast(res.data.data);
@@ -320,7 +323,7 @@ export default function Demand() {
           <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
           <p className="text-rose-600 font-bold text-sm mb-2">{error}</p>
           <button
-            onClick={fetchForecast}
+            onClick={() => fetchForecast(true)}
             className="px-4 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs rounded-full shadow-md hover:shadow-lg hover:shadow-blue-500/30 transition-all cursor-pointer"
           >
             Retry Connection
@@ -354,6 +357,7 @@ export default function Demand() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
         {/* Forecast window toggle */}
         <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm p-1.5 rounded-2xl border border-white/70">
           <button
@@ -379,6 +383,15 @@ export default function Demand() {
             <span>60-Day Forecast</span>
           </button>
         </div>
+        <button
+          onClick={() => fetchForecast(true)}
+          className="flex items-center gap-2 px-4 py-2.5 font-bold text-xs rounded-2xl bg-white/60 border border-white/70 text-slate-600 hover:text-slate-900 transition-all cursor-pointer"
+          title="Recalculate now instead of using the last result (results are reused for a few minutes)"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Refresh</span>
+        </button>
+        </div>
       </header>
 
       {/* DATA-QUALITY NOTICES — say so when numbers come from the built-in engine or thin history */}
@@ -387,7 +400,7 @@ export default function Demand() {
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <div className="space-y-0.5">
             {meta.source === 'fallback' && (
-              <p className="font-bold">AI service is offline — showing the built-in estimate (same method, no trend modelling).</p>
+              <p className="font-bold">AI service is not answering — showing the built-in estimate (same method, same numbers). It will try the AI service again shortly.</p>
             )}
             {(meta.warnings || []).map((w) => (
               <p key={w}>{w}</p>
@@ -598,7 +611,7 @@ export default function Demand() {
                   <td className="px-4 py-3.5 text-center">
                     {item.forecast7Day}
                     {item.forecast7Low != null && item.forecast7High != null && (
-                      <span className="ml-1 text-[10px] font-medium text-slate-400" title="Likely range (4 in 5 chance)">
+                      <span className="ml-1 text-[10px] font-medium text-slate-400" title={`Likely range (4 in 5 chance) · ${item.confidence} confidence, ${item.dataDays} day(s) of sales history`}>
                         ({item.forecast7Low}–{item.forecast7High})
                       </span>
                     )}
@@ -649,7 +662,13 @@ export default function Demand() {
         </div>
       </div>
 
-      <SupplierLeadTimes onSaved={fetchForecast} />
+      <SupplierLeadTimes onSaved={() => fetchForecast(true)} />
+
+      <p className="text-center text-[11px] text-slate-400">
+        Engine {meta.engine} v{meta.engineVersion} · {meta.source === 'fallback' ? 'built-in estimate' : 'AI service'}
+        {meta.generatedAt && <> · calculated {new Date(meta.generatedAt).toLocaleTimeString()}</>}
+        {meta.cached && <> (reused; press Refresh to recalculate)</>} · {meta.observedDays} day(s) of sales history
+      </p>
     </div>
   );
 }

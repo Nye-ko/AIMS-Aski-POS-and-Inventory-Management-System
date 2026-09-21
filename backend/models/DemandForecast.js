@@ -1,11 +1,18 @@
 const { prisma } = require('./Product');
-const axios = require('axios');
 const { buildForecast } = require('../services/forecastEngine');
+const { postJson, createBreaker } = require('../services/aiClient');
+const { createCache } = require('../services/forecastCache');
 const { loadDailySales } = require('./salesHistory');
 const { loadStockoutDays } = require('./stockHistory');
 
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || 'http://localhost:8000/api/v1/forecast';
-const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS) || 15000;
+const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS) || 5000;
+const AI_RETRIES = 1;
+// After 3 failed calls in a row the AI service is skipped for a minute instead of costing every request 10s.
+const aiBreaker = createBreaker({ threshold: 3, cooldownMs: 60000 });
+const CACHE_MS = (Number(process.env.FORECAST_CACHE_SECONDS) >= 0 ? Number(process.env.FORECAST_CACHE_SECONDS) : 300) * 1000;
+const FALLBACK_CACHE_MS = Math.min(CACHE_MS, 30000); // retry the AI service soon
+const forecastCache = createCache({ ttlMs: CACHE_MS });
 const HISTORY_DAYS = Number(process.env.FORECAST_HISTORY_DAYS) || 180;
 // Stock-out days are only needed for recent demand (a 28-day window, plus the backtest's replays), so
 // only this many days back are sent; a product stuck at zero stock would otherwise add a row per day.
@@ -111,18 +118,19 @@ const looksLikeForecast = (data) =>
   Array.isArray(data.skuDemandList) &&
   data.meta;
 
-// `asOf` (YYYY-MM-DD, store-local "today") is injectable so a given day's forecast can be reproduced.
-const getForecastData = async (days = 30, { asOf } = {}) => {
-  const daysToForecast = clampHorizon(days);
-  const today = asOf || localDate(new Date(), STORE_TIMEZONE);
+const computeForecast = async (daysToForecast, today) => {
   const input = await loadForecastInput(daysToForecast, today);
 
   try {
-    const response = await axios.post(PYTHON_AI_URL, input, { timeout: AI_TIMEOUT_MS });
+    const response = await postJson(PYTHON_AI_URL, input, { timeoutMs: AI_TIMEOUT_MS, retries: AI_RETRIES, breaker: aiBreaker });
     if (!looksLikeForecast(response.data)) throw new Error('AI service returned an unexpected response shape');
     return response.data;
   } catch (error) {
-    const detail = error.response ? `HTTP ${error.response.status} ${JSON.stringify(error.response.data).slice(0, 300)}` : error.message;
+    let detail = error.message;
+    if (error.response) {
+      detail = `HTTP ${error.response.status} ${JSON.stringify(error.response.data).slice(0, 300)}`;
+      if (error.response.status === 401) detail += ' - check that AI_SERVICE_KEY matches in backend/.env and ai-service/.env';
+    }
     console.warn(`[forecast] AI service unavailable (${detail}). Using the built-in engine (same method, source: "fallback").`);
     const result = buildForecast(input, { source: 'fallback' });
     result.meta.generatedAt = new Date().toISOString();
@@ -130,4 +138,19 @@ const getForecastData = async (days = 30, { asOf } = {}) => {
   }
 };
 
-module.exports = { getForecastData, loadForecastInput, STORE_TIMEZONE, HISTORY_DAYS, PYTHON_AI_URL, localDate };
+// `asOf` (YYYY-MM-DD, store-local "today") is injectable so a given day's forecast can be reproduced.
+// Results are cached for a few minutes (cleared by any successful write request, see index.js); `refresh`
+// skips the cache. `meta.cached` says whether this response came from it.
+const getForecastData = async (days = 30, { asOf, refresh = false } = {}) => {
+  const daysToForecast = clampHorizon(days);
+  const today = asOf || localDate(new Date(), STORE_TIMEZONE);
+  if (refresh) forecastCache.invalidate();
+  const { value, cached } = await forecastCache.get(`${today}|${daysToForecast}`, () => computeForecast(daysToForecast, today), {
+    ttlFor: (result) => (result.meta && result.meta.source === 'fallback' ? FALLBACK_CACHE_MS : CACHE_MS),
+  });
+  return { ...value, meta: { ...value.meta, cached } };
+};
+
+const invalidateForecastCache = () => forecastCache.invalidate();
+
+module.exports = { getForecastData, loadForecastInput, invalidateForecastCache, STORE_TIMEZONE, HISTORY_DAYS, PYTHON_AI_URL, localDate };
