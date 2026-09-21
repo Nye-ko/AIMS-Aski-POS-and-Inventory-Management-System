@@ -29,6 +29,7 @@ import AdjustStockModal from './AdjustStockModal';
 
 import { apiFetch } from '../../auth/apiFetch';
 import { useAuth } from '../../auth/AuthContext';
+import { buildInventorySheets } from '../../utils/inventorySheets';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -121,87 +122,93 @@ export default function InventorySystem() {
     'Expired':      { fill: 'FFF3E8FF', font: 'FF7E22CE' },
   };
 
-  const exportToExcel = async (data, fileName) => {
-    if (!data || data.length === 0) {
+  // `sheets` ([{ name, rows }]) writes one worksheet per entry; without it `data` becomes a single "Report" sheet.
+  const exportToExcel = async (data, fileName, sheets = null) => {
+    const sheetList = (sheets || [{ name: 'Report', rows: data }]).filter((sheet) => sheet.rows && sheet.rows.length > 0);
+    if (sheetList.length === 0) {
       alert("No data available to export.");
       return;
     }
-
-    const headers = Object.keys(data[0]);
-    const moneyHeaders = new Set(headers.filter((h) => h.includes('₱')));
-    const statusColIndex = headers.indexOf('Status') + 1;
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'AMPC Inventory';
     wb.created = new Date();
 
-    const ws = wb.addWorksheet('Report', {
-      views: [{ state: 'frozen', ySplit: 1 }],
-    });
+    const addSheet = (name, data) => {
+      const headers = Object.keys(data[0]);
+      const moneyHeaders = new Set(headers.filter((h) => h.includes('₱')));
+      const statusColIndex = headers.indexOf('Status') + 1;
 
-    ws.columns = headers.map((h) => {
-      const maxLen = data.reduce((max, row) => {
-        const val = row[h];
-        return Math.max(max, val == null ? 0 : String(val).length);
-      }, h.length);
-      return { header: h, key: h, width: Math.min(Math.max(maxLen + 3, 12), 40) };
-    });
-
-    data.forEach((row) => {
-      const values = {};
-      headers.forEach((h) => {
-        const raw = row[h];
-        values[h] = moneyHeaders.has(h) && raw !== '' && raw != null ? Number(raw) : raw;
-      });
-      ws.addRow(values);
-    });
-
-    const thinBorder = (color) => ({
-      top: { style: 'thin', color: { argb: color } },
-      bottom: { style: 'thin', color: { argb: color } },
-      left: { style: 'thin', color: { argb: color } },
-      right: { style: 'thin', color: { argb: color } },
-    });
-
-    const headerRow = ws.getRow(1);
-    headerRow.height = 20;
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      cell.border = thinBorder('FFCBD5E1');
-    });
-    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
-
-    for (let i = 2; i <= ws.rowCount; i++) {
-      const row = ws.getRow(i);
-      const isEven = i % 2 === 0;
-      row.eachCell((cell, colNumber) => {
-        const header = headers[colNumber - 1];
-        cell.border = thinBorder('FFE2E8F0');
-        if (moneyHeaders.has(header)) {
-          cell.numFmt = '#,##0.00';
-          cell.alignment = { horizontal: 'right' };
-        } else if (typeof cell.value === 'number') {
-          cell.alignment = { horizontal: 'center' };
-        } else {
-          cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        }
-        if (isEven) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
-        }
+      const ws = wb.addWorksheet(name, {
+        views: [{ state: 'frozen', ySplit: 1 }],
       });
 
-      if (statusColIndex > 0) {
-        const statusCell = row.getCell(statusColIndex);
-        const style = STATUS_STYLES[statusCell.value];
-        if (style) {
-          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
-          statusCell.font = { bold: true, color: { argb: style.font } };
-          statusCell.alignment = { horizontal: 'center' };
+      ws.columns = headers.map((h) => {
+        const maxLen = data.reduce((max, row) => {
+          const val = row[h];
+          return Math.max(max, val == null ? 0 : String(val).length);
+        }, h.length);
+        return { header: h, key: h, width: Math.min(Math.max(maxLen + 3, 12), 40) };
+      });
+
+      data.forEach((row) => {
+        const values = {};
+        headers.forEach((h) => {
+          const raw = row[h];
+          values[h] = moneyHeaders.has(h) && raw !== '' && raw != null ? Number(raw) : raw;
+        });
+        ws.addRow(values);
+      });
+
+      const thinBorder = (color) => ({
+        top: { style: 'thin', color: { argb: color } },
+        bottom: { style: 'thin', color: { argb: color } },
+        left: { style: 'thin', color: { argb: color } },
+        right: { style: 'thin', color: { argb: color } },
+      });
+
+      const headerRow = ws.getRow(1);
+      headerRow.height = 20;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = thinBorder('FFCBD5E1');
+      });
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
+
+      for (let i = 2; i <= ws.rowCount; i++) {
+        const row = ws.getRow(i);
+        const isEven = i % 2 === 0;
+        row.eachCell((cell, colNumber) => {
+          const header = headers[colNumber - 1];
+          cell.border = thinBorder('FFE2E8F0');
+          if (moneyHeaders.has(header)) {
+            cell.numFmt = '#,##0.00';
+            cell.alignment = { horizontal: 'right' };
+          } else if (typeof cell.value === 'number') {
+            cell.alignment = { horizontal: 'center' };
+          } else {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          }
+          if (isEven) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          }
+        });
+
+        if (statusColIndex > 0) {
+          const statusCell = row.getCell(statusColIndex);
+          const style = STATUS_STYLES[statusCell.value];
+          if (style) {
+            statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
+            statusCell.font = { bold: true, color: { argb: style.font } };
+            statusCell.alignment = { horizontal: 'center' };
+          }
         }
       }
-    }
+
+    };
+    sheetList.forEach((sheet) => addSheet(sheet.name, sheet.rows));
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -513,11 +520,12 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     return matchesSearch && matchesCategory;
   });
 
+  // Every product (the on-screen search/category filter is ignored) goes into the file: an "All Products" sheet,
+  // then one sheet per category. Product IDs are internal, so they are not exported.
   const handleExportInventorySheet = () => {
-    const data = filteredProducts.map(p => {
+    const rows = products.map((p) => {
       const stock = getStockValue(p);
       return {
-        'Product ID': p.id,
         'Barcode': p.barcode,
         'Product Name': p.name,
         'Supplier': p.supplierName || 'N/A',
@@ -529,7 +537,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         'Status': p.status || (stock > 10 ? 'In Stock' : stock > 0 ? 'Low Stock' : 'Out of Stock')
       };
     });
-    exportToExcel(data, 'Inventory_Sheet');
+    exportToExcel(rows, 'Inventory_Sheet', buildInventorySheets(rows));
   };
 
   return (
