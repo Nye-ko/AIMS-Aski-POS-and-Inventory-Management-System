@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { authHeader } from '../../auth/apiFetch';
+import { useAuth } from '../../auth/AuthContext';
 import {
   TrendingUp,
   AlertTriangle,
@@ -10,7 +11,8 @@ import {
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
-  Target
+  Target,
+  Truck
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -145,6 +147,107 @@ function AccuracyCard({ accuracy, failed }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Days from placing an order with a supplier to receiving it. Every product's reorder point is built
+// from this, so it is editable here (inventory role) and the forecast reloads after each save.
+function SupplierLeadTimes({ onSaved }) {
+  const { role } = useAuth();
+  const [suppliers, setSuppliers] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [busyId, setBusyId] = useState(null);
+  const [message, setMessage] = useState(null);
+  const canEdit = role === 'INVENTORY';
+
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get('http://localhost:5000/api/suppliers', { headers: authHeader() })
+      .then((res) => {
+        if (!cancelled) setSuppliers(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) setSuppliers([]); // this role may not read suppliers: hide the panel
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!suppliers || suppliers.length === 0) return null;
+
+  const save = async (supplier) => {
+    const days = Number(drafts[supplier.id]);
+    setBusyId(supplier.id);
+    setMessage(null);
+    try {
+      const res = await axios.patch(
+        `http://localhost:5000/api/suppliers/${supplier.id}`,
+        { leadTimeDays: days },
+        { headers: authHeader() }
+      );
+      setSuppliers((list) => list.map((x) => (x.id === supplier.id ? { ...x, leadTimeDays: res.data.leadTimeDays } : x)));
+      setDrafts((d) => {
+        const next = { ...d };
+        delete next[supplier.id];
+        return next;
+      });
+      onSaved();
+    } catch (err) {
+      setMessage(err.response?.data?.error || 'Could not save the lead time.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-slate-100 px-5 py-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-sm shadow-blue-500/30">
+          <Truck className="h-4 w-4 text-white" />
+        </div>
+        <div>
+          <h2 className="text-xs font-black uppercase tracking-wide text-slate-800">Supplier Lead Times</h2>
+          <p className="text-[11px] text-slate-500">
+            Days from ordering to delivery. A longer lead time means a product is flagged for reorder sooner.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 p-5 md:grid-cols-3">
+        {suppliers.map((sup) => {
+          const value = drafts[sup.id] ?? sup.leadTimeDays;
+          const dirty = drafts[sup.id] !== undefined && Number(drafts[sup.id]) !== sup.leadTimeDays;
+          return (
+            <div key={sup.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 px-4 py-3">
+              <span className="truncate text-xs font-bold text-slate-700">{sup.name}</span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={value}
+                  disabled={!canEdit}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [sup.id]: e.target.value }))}
+                  className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-center text-xs font-bold text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
+                />
+                <span className="text-[11px] text-slate-500">days</span>
+                {canEdit && dirty && (
+                  <button
+                    onClick={() => save(sup)}
+                    disabled={busyId === sup.id}
+                    className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {busyId === sup.id ? 'Saving…' : 'Save'}
+                  </button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {message && <p className="px-5 pb-4 text-xs text-rose-600">{message}</p>}
     </div>
   );
 }
@@ -458,6 +561,7 @@ export default function Demand() {
                 <th className="px-4 py-3.5 text-center">7-Day Target</th>
                 <th className="px-4 py-3.5 text-center">{horizonDays}-Day Demand</th>
                 <th className="px-4 py-3.5 text-center" title="How far past 7-day forecasts for this product were from what sold (backtest)">7-Day Miss</th>
+                <th className="px-4 py-3.5 text-center" title="Order when stock on hand plus stock on order drops to this level">Reorder At</th>
                 <th className="px-4 py-3.5 text-center">Suggested Reorder</th>
                 <th className="px-4 py-3.5 text-right">Status</th>
               </tr>
@@ -482,7 +586,14 @@ export default function Demand() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3.5 text-center">{item.stock}</td>
+                  <td className="px-4 py-3.5 text-center">
+                    {item.stock}
+                    {item.onOrder > 0 && (
+                      <span className="ml-1 text-[10px] font-semibold text-indigo-600" title="Units on pending purchase orders">
+                        +{item.onOrder} on order
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3.5 text-center">{item.dailyDemand} / day</td>
                   <td className="px-4 py-3.5 text-center">
                     {item.forecast7Day}
@@ -503,7 +614,18 @@ export default function Demand() {
                   >
                     {skuError.get(item.sku)?.wape != null ? pct(skuError.get(item.sku).wape) : '—'}
                   </td>
-                  <td className="px-4 py-3.5 text-center font-bold text-blue-600">
+                  <td
+                    className="px-4 py-3.5 text-center text-slate-600"
+                    title={`Demand over the ${item.leadTimeDays}-day lead time + ${item.safetyStock} safety stock${
+                      item.minStock > item.reorderPoint - 1 ? ' (raised to the minimum stock you set)' : ''
+                    }`}
+                  >
+                    {item.reorderPoint}
+                  </td>
+                  <td
+                    className="px-4 py-3.5 text-center font-bold text-blue-600"
+                    title={item.reorderQty > 0 ? `Brings stock plus incoming up to ${item.orderUpTo}` : 'Nothing to order right now'}
+                  >
                     {item.reorderQty > 0 ? `+${item.reorderQty}` : '0'}
                   </td>
                   <td className="px-4 py-3.5 text-right">
@@ -526,6 +648,8 @@ export default function Demand() {
           </table>
         </div>
       </div>
+
+      <SupplierLeadTimes onSaved={fetchForecast} />
     </div>
   );
 }

@@ -11,6 +11,7 @@
    "category": "Dairy",
    "stock": 40,
    "minStock": 10,
+   "leadTimeDays": 14,
    "expiryDate": null,
    "createdAt": "2026-06-01"
   },
@@ -31,6 +32,7 @@
    "category": "Pantry",
    "stock": 4,
    "minStock": 5,
+   "onOrder": 20,
    "expiryDate": null,
    "createdAt": "2026-09-16"
   },
@@ -51,6 +53,7 @@
    "category": "Dairy",
    "stock": 60,
    "minStock": 10,
+   "leadTimeDays": 3,
    "expiryDate": "2026-10-05",
    "createdAt": "2026-06-01"
   },

@@ -19,11 +19,11 @@ AS_OF = date(2026, 9, 21)
 FIRST_DAY = AS_OF - timedelta(days=45)
 
 PRODUCTS = [
-    {"id": 1, "sku": "STEADY-1", "name": "Steady Seller", "category": "Dairy", "stock": 40, "minStock": 10, "expiryDate": None, "createdAt": "2026-06-01"},
+    {"id": 1, "sku": "STEADY-1", "name": "Steady Seller", "category": "Dairy", "stock": 40, "minStock": 10, "leadTimeDays": 14, "expiryDate": None, "createdAt": "2026-06-01"},
     {"id": 2, "sku": "SPARSE-1", "name": "Sparse Seller", "category": "Hardware", "stock": 30, "minStock": 5, "expiryDate": "2028-01-31", "createdAt": "2026-06-01"},
-    {"id": 3, "sku": "NEW-1", "name": "New Product", "category": "Pantry", "stock": 4, "minStock": 5, "expiryDate": None, "createdAt": "2026-09-16"},
+    {"id": 3, "sku": "NEW-1", "name": "New Product", "category": "Pantry", "stock": 4, "minStock": 5, "onOrder": 20, "expiryDate": None, "createdAt": "2026-09-16"},
     {"id": 4, "sku": "DEAD-1", "name": "Never Sold", "category": "Pantry", "stock": 12, "minStock": 5, "expiryDate": None, "createdAt": "2026-06-01"},
-    {"id": 5, "sku": "EXP-1", "name": "Expiring Soon", "category": "Dairy", "stock": 60, "minStock": 10, "expiryDate": "2026-10-05", "createdAt": "2026-06-01"},
+    {"id": 5, "sku": "EXP-1", "name": "Expiring Soon", "category": "Dairy", "stock": 60, "minStock": 10, "leadTimeDays": 3, "expiryDate": "2026-10-05", "createdAt": "2026-06-01"},
     {"id": 6, "sku": "OLD-1", "name": "Already Expired", "category": None, "stock": 5, "minStock": 5, "expiryDate": "2026-09-01", "createdAt": "2026-06-01"},
 ]
 

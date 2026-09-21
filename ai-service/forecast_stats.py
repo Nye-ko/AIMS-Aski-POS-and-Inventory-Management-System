@@ -9,6 +9,7 @@ not be learned from (the product was out of stock, so a zero there says nothing 
 import math
 
 INTERVAL_Z = 1.2816        # 80% central range under a normal approximation
+SERVICE_Z = 1.6449         # one-sided 95%: safety stock covers demand 19 times out of 20
 VARIANCE_WINDOW_DAYS = 28  # recent days used to measure how much daily sales bounce around
 
 
@@ -38,8 +39,8 @@ def sample_variance(vals, days=VARIANCE_WINDOW_DAYS):
     return acc / (len(seen) - 1)
 
 
-def range_for_total(rate, level_days, variance, days, count_data=False):
-    """(low, high): 80% range for the total over `days` days at `rate` per day.
+def total_sd(rate, level_days, variance, days, count_data=False):
+    """Standard deviation of the total sold over `days` days at `rate` per day.
 
     Day-to-day noise adds up with the number of days; the error in the rate itself (estimated from
     `level_days` days) grows with the square of the number of days, so long horizons get wide, honestly.
@@ -49,7 +50,11 @@ def range_for_total(rate, level_days, variance, days, count_data=False):
     v = variance if variance is not None else (rate if count_data else 0.0)
     if count_data and rate > v:
         v = rate
-    total_var = days * v + days * days * v / level_days
-    sd = math.sqrt(total_var)
+    return math.sqrt(days * v + days * days * v / level_days)
+
+
+def range_for_total(rate, level_days, variance, days, count_data=False):
+    """(low, high): 80% range for the total over `days` days at `rate` per day."""
+    sd = total_sd(rate, level_days, variance, days, count_data)
     total = rate * days
     return max(0.0, total - INTERVAL_Z * sd), total + INTERVAL_Z * sd

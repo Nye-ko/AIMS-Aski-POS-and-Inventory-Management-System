@@ -10,6 +10,7 @@ const HISTORY_DAYS = Number(process.env.FORECAST_HISTORY_DAYS) || 180;
 // Stock-out days are only needed for recent demand (a 28-day window, plus the backtest's replays), so
 // only this many days back are sent; a product stuck at zero stock would otherwise add a row per day.
 const STOCKOUT_LOOKBACK_DAYS = 90;
+const DEFAULT_LEAD_TIME_DAYS = 7; // products without a supplier
 const MIN_HORIZON_DAYS = 1;
 const MAX_HORIZON_DAYS = 365;
 const MS_PER_DAY = 86400000;
@@ -43,9 +44,12 @@ const loadForecastInput = async (daysToForecast, asOf) => {
   const lowerBound = new Date(Date.parse(`${asOf}T00:00:00Z`) - (HISTORY_DAYS + 2) * MS_PER_DAY);
 
   const stockoutFrom = new Date(Date.parse(`${asOf}T00:00:00Z`) - (STOCKOUT_LOOKBACK_DAYS + 2) * MS_PER_DAY);
-  const [products, { salesRows, totalRows }, stockoutsByProduct] = await Promise.all([
+  const [products, { salesRows, totalRows }, stockoutsByProduct, pendingOrders] = await Promise.all([
     prisma.product.findMany({
-      select: { id: true, sku: true, name: true, category: true, stock: true, minStock: true, expiryDate: true, createdAt: true },
+      select: {
+        id: true, sku: true, name: true, category: true, stock: true, minStock: true, expiryDate: true, createdAt: true,
+        supplier: { select: { leadTimeDays: true } },
+      },
       orderBy: { id: 'asc' },
     }),
     loadDailySales({ since: lowerBound, timeZone }),
@@ -55,7 +59,14 @@ const loadForecastInput = async (daysToForecast, asOf) => {
       fromDay: localDate(stockoutFrom, timeZone),
       lastDay: new Date(Date.parse(`${asOf}T00:00:00Z`) - MS_PER_DAY).toISOString().slice(0, 10),
     }),
+    // Units already ordered from suppliers but not yet received; draft orders are not commitments.
+    prisma.purchaseOrderItem.groupBy({
+      by: ['productId'],
+      where: { purchaseOrder: { status: 'PENDING' } },
+      _sum: { quantity: true },
+    }),
   ]);
+  const onOrderByProduct = new Map(pendingOrders.map((r) => [r.productId, r._sum.quantity || 0]));
 
   const skuById = new Map();
   const productInputs = products.map((p) => {
@@ -71,6 +82,8 @@ const loadForecastInput = async (daysToForecast, asOf) => {
       // Expiry is a calendar date (stored as UTC midnight); creation is a real instant in store time.
       expiryDate: p.expiryDate ? p.expiryDate.toISOString().slice(0, 10) : null,
       createdAt: localDate(p.createdAt, timeZone),
+      leadTimeDays: p.supplier ? p.supplier.leadTimeDays : DEFAULT_LEAD_TIME_DAYS,
+      onOrder: onOrderByProduct.get(p.id) || 0,
     };
   });
 

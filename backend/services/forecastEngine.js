@@ -7,15 +7,17 @@
 //
 // Engine "rate-mean" 2.0.0: a product's demand rate is units per calendar day over its last 28 days,
 // zero days included but days it was out of stock skipped; store revenue uses the last 14 days; every
-// forecast carries an 80% range. See the header of ai-service/forecast_engine.py for the reasoning.
+// forecast carries an 80% range. Reorder decisions (2.1.0): reorder point = expected demand over the
+// supplier's lead time + 95% safety stock, never below minStock; flagged when on hand + on order is at
+// or below it. See the header of ai-service/forecast_engine.py for the reasoning.
 //
 // Money is summed in integer cents so results do not depend on row order. Dates are ISO "YYYY-MM-DD"
 // strings in the store's local time zone.
 
-const { windowMean, sampleVariance, rangeForTotal } = require('./forecastStats');
+const { SERVICE_Z, windowMean, sampleVariance, totalSd, rangeForTotal } = require('./forecastStats');
 
 const ENGINE_NAME = 'rate-mean';
-const ENGINE_VERSION = '2.0.0';
+const ENGINE_VERSION = '2.1.0';
 
 const RATE_WINDOW_DAYS = 28; // a product's demand rate
 const REVENUE_WINDOW_DAYS = 14; // the store's revenue rate
@@ -23,6 +25,8 @@ const TRAJECTORY_HISTORY_DAYS = 30;
 const EXPIRY_HORIZON_DAYS = 180;
 const MIN_DAYS_FOR_GROWTH = 14;
 const MIN_USABLE_DAYS = 7; // fewer in-stock days than this in the window: stock-outs are not excluded
+const DEFAULT_LEAD_TIME_DAYS = 7; // used when a product's supplier has no lead time
+const REVIEW_DAYS = 7; // how often stock is reviewed: a reorder covers lead time plus this many days
 const EPS = 1e-9;
 
 const STATUS_REORDER = 'REORDER NOW';
@@ -218,6 +222,9 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
     let rate = 0;
     let low7 = 0;
     let high7 = 0;
+    let sdLead = 0;
+    let sdCycle = 0;
+    const lead = Math.max(1, Math.trunc(Number(p.leadTimeDays)) || DEFAULT_LEAD_TIME_DAYS);
     let stockouts = 0;
     let adjusted = false;
     if (skuStart !== null && skuStart <= windowEnd) {
@@ -240,17 +247,28 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       const level = windowMean(recent, RATE_WINDOW_DAYS);
       rate = level.mean;
       dataDays = level.count;
-      [low7, high7] = rangeForTotal(rate, dataDays, sampleVariance(recent), 7, true);
+      const variance = sampleVariance(recent);
+      [low7, high7] = rangeForTotal(rate, dataDays, variance, 7, true);
+      sdLead = totalSd(rate, dataDays, variance, lead, true);
+      sdCycle = totalSd(rate, dataDays, variance, lead + REVIEW_DAYS, true);
     }
 
     const stock = Math.max(0, Math.trunc(Number(p.stock) || 0));
+    const onOrder = Math.max(0, Math.trunc(Number(p.onOrder) || 0));
+    const minStock = Math.trunc(Number(p.minStock) || 0);
     const forecast7 = rate * 7;
     const daysToExpiry = p.expiryDate ? day(p.expiryDate) - asOf : null;
+    const sellable = daysToExpiry !== null && daysToExpiry <= 0 ? 0 : stock; // expired stock cannot be sold
+    const safety = SERVICE_Z * sdLead;
+    const reorderPoint = Math.max(Math.ceil(rate * lead + safety - EPS) + 0, minStock);
+    const orderUpTo = Math.max(Math.ceil(rate * (lead + REVIEW_DAYS) + SERVICE_Z * sdCycle - EPS) + 0, reorderPoint);
+    const position = sellable + onOrder;
+    const needsOrder = reorderPoint > 0 && position <= reorderPoint;
 
     let status;
     if (daysToExpiry !== null && daysToExpiry <= 0 && stock > 0) {
       status = STATUS_EXPIRY; // already expired stock
-    } else if (forecast7 > 0 && stock <= forecast7) {
+    } else if (needsOrder) {
       status = STATUS_REORDER;
     } else if (
       daysToExpiry !== null &&
@@ -272,13 +290,18 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       name: p.name,
       category,
       stock,
-      minStock: Math.trunc(Number(p.minStock) || 0),
+      minStock,
       dailyDemand: round(rate, 2),
       forecast7Day: round(forecast7, 1),
       forecast7Low: round(low7, 1),
       forecast7High: round(high7, 1),
       forecastHorizon: round(rate * horizon, 1),
-      reorderQty: Math.ceil(Math.max(0, forecast7 - stock) - EPS) + 0, // + 0 turns -0 into 0
+      leadTimeDays: lead,
+      onOrder,
+      safetyStock: round(safety, 1),
+      reorderPoint,
+      orderUpTo,
+      reorderQty: needsOrder ? Math.max(1, orderUpTo - position) : 0,
       daysOfCover: rate > 0 ? round(stock / rate, 1) : null,
       status,
       confidence: confidence(dataDays),
@@ -337,6 +360,8 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       rateWindowDays: RATE_WINDOW_DAYS,
       revenueWindowDays: REVENUE_WINDOW_DAYS,
       rangeLevel: 0.8,
+      serviceLevel: 0.95,
+      reviewDays: REVIEW_DAYS,
       skuCount: items.length,
       lowData: observedDays < MIN_DAYS_FOR_GROWTH,
       warnings,

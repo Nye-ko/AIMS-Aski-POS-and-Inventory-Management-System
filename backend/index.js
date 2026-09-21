@@ -356,6 +356,26 @@ app.get('/api/suppliers', authenticateToken, requireRole(...ROLES.INVENTORY_READ
   }
 });
 
+// Days from placing an order with this supplier to receiving it; drives every product's reorder point.
+const MAX_LEAD_TIME_DAYS = 90;
+app.patch('/api/suppliers/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const leadTimeDays = Number(req.body.leadTimeDays);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid supplier id' });
+    if (!Number.isInteger(leadTimeDays) || leadTimeDays < 1 || leadTimeDays > MAX_LEAD_TIME_DAYS) {
+      return res.status(400).json({ error: `Lead time must be a whole number of days from 1 to ${MAX_LEAD_TIME_DAYS}` });
+    }
+    const existing = await prisma.supplier.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return res.status(404).json({ error: 'Supplier not found' });
+    const supplier = await prisma.supplier.update({ where: { id }, data: { leadTimeDays } });
+    res.json(supplier);
+  } catch (error) {
+    console.error('Error updating supplier:', error);
+    res.status(500).json({ error: 'Failed to update supplier' });
+  }
+});
+
 // --- PURCHASE ORDER ROUTES ---
 
 // Maps purchasing failures onto HTTP: typed errors carry their own status, a vanished session is 401,

@@ -59,6 +59,36 @@ test('a product that was nearly always sold out is not excluded', () => {
   assert.equal(aware.stockoutAdjusted, false);
 });
 
+const steady = (extra) =>
+  buildForecast({
+    asOf,
+    daysToForecast: 30,
+    products: [{ ...product, ...extra }],
+    sales: Array.from({ length: 28 }, (_, i) => ({ sku: 'A', date: daysBack(i + 1), quantity: 2, revenue: 100 })),
+    dailyTotals: [],
+  }).skuDemandList[0];
+
+test('reorder point is lead-time demand plus safety stock, and lead time moves it', () => {
+  const a = steady({ stock: 100, leadTimeDays: 7 });
+  assert.equal(a.safetyStock, 6.9);
+  assert.equal(a.reorderPoint, 21);
+  assert.equal(a.status, 'HEALTHY');
+  assert.ok(steady({ leadTimeDays: 14 }).reorderPoint > steady({ leadTimeDays: 3 }).reorderPoint);
+  assert.equal(steady({}).leadTimeDays, 7);
+});
+
+test('stock on order counts toward the position; minStock is a floor; expired stock is not sellable', () => {
+  assert.equal(steady({ stock: 10 }).status, 'REORDER NOW');
+  const covered = steady({ stock: 10, onOrder: 40 });
+  assert.equal(covered.status, 'HEALTHY');
+  assert.equal(covered.reorderQty, 0);
+  const a = steady({ stock: 10, onOrder: 5 });
+  assert.equal(a.reorderQty, a.orderUpTo - 15);
+  assert.equal(steady({ stock: 30, minStock: 40 }).reorderPoint, 40);
+  const expired = steady({ stock: 500, expiryDate: '2026-09-01' });
+  assert.equal(expired.reorderQty, expired.orderUpTo);
+});
+
 test('forecast sits inside its 80% range', () => {
   const r = buildForecast({
     asOf,

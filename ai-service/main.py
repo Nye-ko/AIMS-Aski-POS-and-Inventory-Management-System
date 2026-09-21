@@ -29,6 +29,8 @@ class ProductInput(BaseModel):
     minStock: int = 0
     expiryDate: Optional[IsoDate] = None
     createdAt: Optional[IsoDate] = None
+    leadTimeDays: int = Field(default=7, ge=1, le=90)   # supplier's days from order to arrival
+    onOrder: int = Field(default=0, ge=0)               # units on pending purchase orders
 
 
 class SaleInput(BaseModel):

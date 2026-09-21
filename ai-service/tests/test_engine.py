@@ -58,7 +58,7 @@ class DemandRate(unittest.TestCase):
         a = item(r, "A")
         self.assertEqual(a["dailyDemand"], 2.0)
         self.assertEqual(a["forecast7Day"], 14.0)
-        self.assertEqual(a["reorderQty"], 4)
+        self.assertEqual(a["reorderQty"], 29)      # restock to lead time + review period, plus safety stock
         self.assertEqual(a["status"], "REORDER NOW")
         self.assertEqual(a["confidence"], "high")
 
@@ -291,6 +291,74 @@ class RevenueLevel(unittest.TestCase):
             sales.append({"sku": "A", "date": (AS_OF - timedelta(days=1 + i)).isoformat(),
                           "quantity": 4 if i < 14 else 2, "revenue": 10.0})
         self.assertEqual(item(run([product("A")], sales), "A")["dailyDemand"], 3.0)
+
+
+class Reorder(unittest.TestCase):
+    def steady(self, **kw):
+        return item(run([product(**kw)], daily("A", 28, 2, 50)), "A")
+
+    def test_reorder_point_is_lead_time_demand_plus_safety_stock(self):
+        a = self.steady(stock=100, leadTimeDays=7)
+        # 2/day for 7 days = 14, plus 95% safety stock: sqrt(7*2 + 49*2/28) * 1.6449 = 6.9
+        self.assertEqual(a["safetyStock"], 6.9)
+        self.assertEqual(a["reorderPoint"], 21)
+        self.assertEqual(a["status"], "HEALTHY")
+
+    def test_longer_lead_time_means_reorder_earlier(self):
+        short = self.steady(stock=25, leadTimeDays=3)
+        long = self.steady(stock=25, leadTimeDays=14)
+        self.assertLess(short["reorderPoint"], long["reorderPoint"])
+        self.assertEqual(short["status"], "HEALTHY")
+        self.assertEqual(long["status"], "REORDER NOW")
+
+    def test_missing_lead_time_defaults_to_seven_days(self):
+        self.assertEqual(self.steady(stock=100)["leadTimeDays"], 7)
+
+    def test_pending_orders_count_as_stock_on_the_way(self):
+        flagged = self.steady(stock=10)
+        covered = self.steady(stock=10, onOrder=40)
+        self.assertEqual(flagged["status"], "REORDER NOW")
+        self.assertEqual(covered["status"], "HEALTHY")
+        self.assertEqual(covered["reorderQty"], 0)
+        self.assertEqual(covered["onOrder"], 40)
+
+    def test_suggested_quantity_restocks_to_order_up_to_level_minus_position(self):
+        a = self.steady(stock=10, onOrder=5)
+        self.assertEqual(a["reorderQty"], a["orderUpTo"] - 15)
+        self.assertGreater(a["orderUpTo"], a["reorderPoint"])
+
+    def test_min_stock_is_a_floor_under_the_reorder_point(self):
+        a = self.steady(stock=30, minStock=40)
+        self.assertEqual(a["reorderPoint"], 40)
+        self.assertEqual(a["status"], "REORDER NOW")
+
+    def test_product_without_sales_history_still_follows_min_stock(self):
+        r = run([product("N", stock=3, minStock=10)], daily("A", 28, 1, 10))
+        n = item(r, "N")
+        self.assertEqual((n["reorderPoint"], n["status"], n["reorderQty"]), (10, "REORDER NOW", 7))
+
+    def test_dead_product_with_no_minimum_is_not_flagged(self):
+        r = run([product("N", stock=0, minStock=0)], daily("A", 28, 1, 10))
+        self.assertEqual((item(r, "N")["status"], item(r, "N")["reorderQty"]), ("HEALTHY", 0))
+
+    def test_noisier_sales_need_more_safety_stock(self):
+        rng = random.Random(2)
+        noisy = []
+        for i in range(28):
+            noisy += daily("A", 1, rng.choice([0, 0, 1, 6, 5]), 50, start_offset=1 + i)
+        mean = sum(s["quantity"] for s in noisy) / 28
+        steady = item(run([product(stock=100)], daily("A", 28, round(mean), 50)), "A")
+        self.assertGreater(item(run([product(stock=100)], noisy), "A")["safetyStock"], steady["safetyStock"])
+
+    def test_expired_stock_still_reads_as_expiry_risk_before_reorder(self):
+        a = self.steady(stock=1, expiryDate="2026-09-01")
+        self.assertEqual(a["status"], "EXPIRY RISK")
+
+    def test_expired_stock_cannot_cover_demand_so_a_full_order_is_suggested(self):
+        expired = self.steady(stock=500, expiryDate="2026-09-01")
+        self.assertEqual(expired["reorderQty"], expired["orderUpTo"])
+        fresh = self.steady(stock=500, expiryDate="2028-01-01")
+        self.assertEqual(fresh["reorderQty"], 0)
 
 
 class Determinism(unittest.TestCase):

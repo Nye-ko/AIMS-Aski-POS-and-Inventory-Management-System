@@ -7,6 +7,7 @@ from datetime import date, timedelta
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from backtest import run_backtest, summarize  # noqa: E402
+from forecast_engine import ENGINE_VERSION  # noqa: E402
 
 AS_OF = date(2026, 9, 21)
 
@@ -104,7 +105,7 @@ class Backtest(unittest.TestCase):
     def test_current_engine_is_compared_with_the_previous_version(self):
         # sales double 20 days ago: the 14-day revenue window catches up sooner than the old 28-day one
         r = run_backtest(build(lambda i: 4 if i <= 20 else 2, days=90))
-        self.assertEqual(r["meta"]["engineVersion"], "2.0.0")
+        self.assertEqual(r["meta"]["engineVersion"], ENGINE_VERSION)
         self.assertEqual(r["meta"]["comparedWith"]["engineVersion"], "1.0.0")
         self.assertIsNotNone(r["revenue7"]["legacy"]["wape"])
         self.assertGreater(r["revenue7"]["skillVsLegacy"], 0)

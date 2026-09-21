@@ -5,12 +5,17 @@ randomness), which keeps forecasts reproducible and lets the backend's JavaScrip
 (backend/services/forecastEngine.js) implement the identical algorithm. Both are checked against the
 same golden fixture (ai-service/tests/fixtures), so change them together.
 
-Engine "rate-mean" 2.0.0: demand rate = units sold per calendar day over the last 28 days a product
+Engine "rate-mean" (2.x): demand rate = units sold per calendar day over the last 28 days a product
 existed, counting days with no sales as zero but skipping days the product was out of stock (those
 zeros are lost sales, not lack of demand). Store revenue uses the last 14 days, which follows a moving
 level sooner than 28 does (measured with backtest.py, see CLAUDE.md). Every forecast carries an 80% range.
-Version 1.0.0 (28 days for revenue, stock-outs ignored, no ranges) stays available behind `legacy=True`
+Version 1.0.0's forecasts (28 days for revenue, stock-outs ignored) stay reproducible behind `legacy=True`
 so the backtest can keep proving that the current version is better than the one it replaced.
+
+Reorder decisions (2.1.0): reorder point = expected demand over the supplier's lead time + safety stock
+(95% one-sided, from the same uncertainty that gives the ranges), never below the product's own minStock.
+A product is flagged when on hand + already on order (pending purchase orders) is at or below it, and the
+suggested quantity restocks it to lead time + a 7-day review period of demand plus safety stock.
 
 Money is summed in integer cents so results do not depend on row order. Dates are ISO
 "YYYY-MM-DD" strings in the store's local time zone, supplied by the caller.
@@ -18,10 +23,10 @@ Money is summed in integer cents so results do not depend on row order. Dates ar
 import math
 from datetime import date
 
-from forecast_stats import range_for_total, sample_variance, window_mean
+from forecast_stats import SERVICE_Z, range_for_total, sample_variance, total_sd, window_mean
 
 ENGINE_NAME = "rate-mean"
-ENGINE_VERSION = "2.0.0"
+ENGINE_VERSION = "2.1.0"
 LEGACY_VERSION = "1.0.0"
 
 RATE_WINDOW_DAYS = 28          # how many recent days set a product's demand rate
@@ -30,6 +35,8 @@ TRAJECTORY_HISTORY_DAYS = 30   # days of actuals drawn before the forecast line
 EXPIRY_HORIZON_DAYS = 180      # only judge sell-through against expiry dates this close
 MIN_DAYS_FOR_GROWTH = 14       # below this, growth and confidence are not meaningful
 MIN_USABLE_DAYS = 7            # fewer in-stock days than this in the window: stock-outs are not excluded
+DEFAULT_LEAD_TIME_DAYS = 7     # used when a product's supplier has no lead time
+REVIEW_DAYS = 7                # how often stock is reviewed: a reorder covers lead time plus this many days
 EPS = 1e-9
 
 STATUS_REORDER = "REORDER NOW"
@@ -203,6 +210,8 @@ def build_forecast(payload, source="ai-service", legacy=False):
         cents = 0
         rate = 0.0
         low7 = high7 = 0.0
+        sd_lead = sd_cycle = 0.0
+        lead = max(1, int(p.get("leadTimeDays") or DEFAULT_LEAD_TIME_DAYS))
         stockouts = 0
         adjusted = False
         if sku_start is not None and sku_start <= window_end:
@@ -221,15 +230,26 @@ def build_forecast(payload, source="ai-service", legacy=False):
 
             recent = [None if d in out else by_day.get(d, [0, 0])[0] for d in range(rate_start, window_end + 1)]
             rate, data_days = window_mean(recent, RATE_WINDOW_DAYS)
-            low7, high7 = range_for_total(rate, data_days, sample_variance(recent), 7, count_data=True)
+            variance = sample_variance(recent)
+            low7, high7 = range_for_total(rate, data_days, variance, 7, count_data=True)
+            sd_lead = total_sd(rate, data_days, variance, lead, count_data=True)
+            sd_cycle = total_sd(rate, data_days, variance, lead + REVIEW_DAYS, count_data=True)
 
         stock = max(0, int(p.get("stock") or 0))
+        on_order = max(0, int(p.get("onOrder") or 0))
+        min_stock = int(p.get("minStock") or 0)
         forecast7 = rate * 7
         days_to_expiry = (_day(p["expiryDate"]) - as_of) if p.get("expiryDate") else None
+        sellable = 0 if days_to_expiry is not None and days_to_expiry <= 0 else stock   # expired stock cannot be sold
+        safety = SERVICE_Z * sd_lead
+        reorder_point = max(int(math.ceil(rate * lead + safety - EPS)), min_stock)
+        order_up_to = max(int(math.ceil(rate * (lead + REVIEW_DAYS) + SERVICE_Z * sd_cycle - EPS)), reorder_point)
+        position = sellable + on_order
+        needs_order = reorder_point > 0 and position <= reorder_point
 
         if days_to_expiry is not None and days_to_expiry <= 0 and stock > 0:
             status = STATUS_EXPIRY          # already expired stock
-        elif forecast7 > 0 and stock <= forecast7:
+        elif needs_order:
             status = STATUS_REORDER
         elif (days_to_expiry is not None and stock > 0 and days_to_expiry <= EXPIRY_HORIZON_DAYS
               and stock > rate * days_to_expiry):
@@ -246,13 +266,18 @@ def build_forecast(payload, source="ai-service", legacy=False):
             "name": p["name"],
             "category": category,
             "stock": stock,
-            "minStock": int(p.get("minStock") or 0),
+            "minStock": min_stock,
             "dailyDemand": _round(rate, 2),
             "forecast7Day": _round(forecast7, 1),
             "forecast7Low": _round(low7, 1),
             "forecast7High": _round(high7, 1),
             "forecastHorizon": _round(rate * horizon, 1),
-            "reorderQty": int(math.ceil(max(0.0, forecast7 - stock) - EPS)),
+            "leadTimeDays": lead,
+            "onOrder": on_order,
+            "safetyStock": _round(safety, 1),
+            "reorderPoint": reorder_point,
+            "orderUpTo": order_up_to,
+            "reorderQty": max(1, order_up_to - position) if needs_order else 0,
             "daysOfCover": _round(stock / rate, 1) if rate > 0 else None,
             "status": status,
             "confidence": _confidence(data_days),
@@ -300,6 +325,8 @@ def build_forecast(payload, source="ai-service", legacy=False):
             "rateWindowDays": RATE_WINDOW_DAYS,
             "revenueWindowDays": revenue_window,
             "rangeLevel": 0.8,
+            "serviceLevel": 0.95,
+            "reviewDays": REVIEW_DAYS,
             "skuCount": len(items),
             "lowData": observed_days < MIN_DAYS_FOR_GROWTH,
             "warnings": warnings,
