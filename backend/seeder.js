@@ -125,7 +125,7 @@ async function seedData() {
         const discountAmount = (transactionSubtotal * discountPercent) / 100;
         const totalAmount = transactionSubtotal - discountAmount;
 
-        const paymentMethods = ['CASH', 'CARD', 'E_Wallet'];
+        const paymentMethods = ['CASH', 'CARD', 'E_wallet'];
         const paymentMethod = paymentMethods[Math.floor(Math.random() * paymentMethods.length)];
 
         dailyGrossSales += transactionSubtotal;
