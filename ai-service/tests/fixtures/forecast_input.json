@@ -1,0 +1,894 @@
+{
+ "asOf": "2026-09-21",
+ "timezone": "Asia/Manila",
+ "daysToForecast": 30,
+ "historyDays": 180,
+ "products": [
+  {
+   "id": 1,
+   "sku": "STEADY-1",
+   "name": "Steady Seller",
+   "category": "Dairy",
+   "stock": 40,
+   "minStock": 10,
+   "expiryDate": null,
+   "createdAt": "2026-06-01"
+  },
+  {
+   "id": 2,
+   "sku": "SPARSE-1",
+   "name": "Sparse Seller",
+   "category": "Hardware",
+   "stock": 30,
+   "minStock": 5,
+   "expiryDate": "2028-01-31",
+   "createdAt": "2026-06-01"
+  },
+  {
+   "id": 3,
+   "sku": "NEW-1",
+   "name": "New Product",
+   "category": "Pantry",
+   "stock": 4,
+   "minStock": 5,
+   "expiryDate": null,
+   "createdAt": "2026-09-16"
+  },
+  {
+   "id": 4,
+   "sku": "DEAD-1",
+   "name": "Never Sold",
+   "category": "Pantry",
+   "stock": 12,
+   "minStock": 5,
+   "expiryDate": null,
+   "createdAt": "2026-06-01"
+  },
+  {
+   "id": 5,
+   "sku": "EXP-1",
+   "name": "Expiring Soon",
+   "category": "Dairy",
+   "stock": 60,
+   "minStock": 10,
+   "expiryDate": "2026-10-05",
+   "createdAt": "2026-06-01"
+  },
+  {
+   "id": 6,
+   "sku": "OLD-1",
+   "name": "Already Expired",
+   "category": null,
+   "stock": 5,
+   "minStock": 5,
+   "expiryDate": "2026-09-01",
+   "createdAt": "2026-06-01"
+  }
+ ],
+ "sales": [
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-07",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-07",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-08",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-09",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-10",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-11",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-12",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-12",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-13",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-14",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-15",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-16",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-17",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-17",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-18",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-19",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-20",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-21",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-22",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-22",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-23",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-24",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-25",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-25",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-26",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-26",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-27",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-27",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-27",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-28",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-28",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-29",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-29",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-30",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-30",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-08-31",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-08-31",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-01",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-01",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-01",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-02",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-02",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-03",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-03",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-04",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-04",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-05",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-05",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-06",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-06",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-06",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-07",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-07",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-08",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-08",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-09",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-09",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-10",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-10",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-11",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-11",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-11",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-12",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-12",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-13",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-13",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-14",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-14",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-15",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-15",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-16",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-16",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "NEW-1",
+   "date": "2026-09-16",
+   "quantity": 1,
+   "revenue": 10.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-16",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-17",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "NEW-1",
+   "date": "2026-09-17",
+   "quantity": 1,
+   "revenue": 10.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-17",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-18",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "NEW-1",
+   "date": "2026-09-18",
+   "quantity": 1,
+   "revenue": 10.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-18",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-19",
+   "quantity": 3,
+   "revenue": 150.0
+  },
+  {
+   "sku": "NEW-1",
+   "date": "2026-09-19",
+   "quantity": 1,
+   "revenue": 10.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-19",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-20",
+   "quantity": 4,
+   "revenue": 200.0
+  },
+  {
+   "sku": "NEW-1",
+   "date": "2026-09-20",
+   "quantity": 1,
+   "revenue": 10.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-20",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-21",
+   "quantity": 2,
+   "revenue": 100.0
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-21",
+   "quantity": 3,
+   "revenue": 360.75
+  },
+  {
+   "sku": "NEW-1",
+   "date": "2026-09-21",
+   "quantity": 1,
+   "revenue": 10.0
+  },
+  {
+   "sku": "EXP-1",
+   "date": "2026-09-21",
+   "quantity": 1,
+   "revenue": 33.33
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-21",
+   "quantity": 99,
+   "revenue": 4950.0
+  },
+  {
+   "sku": "GHOST",
+   "date": "2026-09-18",
+   "quantity": 5,
+   "revenue": 50.0
+  }
+ ],
+ "dailyTotals": [
+  {
+   "date": "2026-08-07",
+   "gross": 460.75,
+   "discount": 46.08,
+   "net": 414.67
+  },
+  {
+   "date": "2026-08-08",
+   "gross": 150.0,
+   "discount": 0.0,
+   "net": 150.0
+  },
+  {
+   "date": "2026-08-09",
+   "gross": 200.0,
+   "discount": 0.0,
+   "net": 200.0
+  },
+  {
+   "date": "2026-08-10",
+   "gross": 100.0,
+   "discount": 0.0,
+   "net": 100.0
+  },
+  {
+   "date": "2026-08-11",
+   "gross": 150.0,
+   "discount": 0.0,
+   "net": 150.0
+  },
+  {
+   "date": "2026-08-12",
+   "gross": 560.75,
+   "discount": 0.0,
+   "net": 560.75
+  },
+  {
+   "date": "2026-08-13",
+   "gross": 100.0,
+   "discount": 0.0,
+   "net": 100.0
+  },
+  {
+   "date": "2026-08-14",
+   "gross": 150.0,
+   "discount": 15.0,
+   "net": 135.0
+  },
+  {
+   "date": "2026-08-15",
+   "gross": 200.0,
+   "discount": 0.0,
+   "net": 200.0
+  },
+  {
+   "date": "2026-08-16",
+   "gross": 100.0,
+   "discount": 0.0,
+   "net": 100.0
+  },
+  {
+   "date": "2026-08-17",
+   "gross": 510.75,
+   "discount": 0.0,
+   "net": 510.75
+  },
+  {
+   "date": "2026-08-18",
+   "gross": 200.0,
+   "discount": 0.0,
+   "net": 200.0
+  },
+  {
+   "date": "2026-08-19",
+   "gross": 100.0,
+   "discount": 0.0,
+   "net": 100.0
+  },
+  {
+   "date": "2026-08-20",
+   "gross": 150.0,
+   "discount": 0.0,
+   "net": 150.0
+  },
+  {
+   "date": "2026-08-21",
+   "gross": 200.0,
+   "discount": 20.0,
+   "net": 180.0
+  },
+  {
+   "date": "2026-08-22",
+   "gross": 460.75,
+   "discount": 0.0,
+   "net": 460.75
+  },
+  {
+   "date": "2026-08-23",
+   "gross": 150.0,
+   "discount": 0.0,
+   "net": 150.0
+  },
+  {
+   "date": "2026-08-24",
+   "gross": 200.0,
+   "discount": 0.0,
+   "net": 200.0
+  },
+  {
+   "date": "2026-08-25",
+   "gross": 133.33,
+   "discount": 0.0,
+   "net": 133.33
+  },
+  {
+   "date": "2026-08-26",
+   "gross": 183.33,
+   "discount": 0.0,
+   "net": 183.33
+  },
+  {
+   "date": "2026-08-27",
+   "gross": 594.08,
+   "discount": 0.0,
+   "net": 594.08
+  },
+  {
+   "date": "2026-08-28",
+   "gross": 133.33,
+   "discount": 13.33,
+   "net": 120.0
+  },
+  {
+   "date": "2026-08-29",
+   "gross": 183.33,
+   "discount": 0.0,
+   "net": 183.33
+  },
+  {
+   "date": "2026-08-30",
+   "gross": 233.33,
+   "discount": 0.0,
+   "net": 233.33
+  },
+  {
+   "date": "2026-08-31",
+   "gross": 133.33,
+   "discount": 0.0,
+   "net": 133.33
+  },
+  {
+   "date": "2026-09-01",
+   "gross": 544.08,
+   "discount": 0.0,
+   "net": 544.08
+  },
+  {
+   "date": "2026-09-02",
+   "gross": 233.33,
+   "discount": 0.0,
+   "net": 233.33
+  },
+  {
+   "date": "2026-09-03",
+   "gross": 133.33,
+   "discount": 0.0,
+   "net": 133.33
+  },
+  {
+   "date": "2026-09-04",
+   "gross": 183.33,
+   "discount": 18.33,
+   "net": 165.0
+  },
+  {
+   "date": "2026-09-05",
+   "gross": 233.33,
+   "discount": 0.0,
+   "net": 233.33
+  },
+  {
+   "date": "2026-09-06",
+   "gross": 494.08,
+   "discount": 0.0,
+   "net": 494.08
+  },
+  {
+   "date": "2026-09-07",
+   "gross": 183.33,
+   "discount": 0.0,
+   "net": 183.33
+  },
+  {
+   "date": "2026-09-08",
+   "gross": 233.33,
+   "discount": 0.0,
+   "net": 233.33
+  },
+  {
+   "date": "2026-09-09",
+   "gross": 133.33,
+   "discount": 0.0,
+   "net": 133.33
+  },
+  {
+   "date": "2026-09-10",
+   "gross": 183.33,
+   "discount": 0.0,
+   "net": 183.33
+  },
+  {
+   "date": "2026-09-11",
+   "gross": 594.08,
+   "discount": 59.41,
+   "net": 534.67
+  },
+  {
+   "date": "2026-09-12",
+   "gross": 133.33,
+   "discount": 0.0,
+   "net": 133.33
+  },
+  {
+   "date": "2026-09-13",
+   "gross": 183.33,
+   "discount": 0.0,
+   "net": 183.33
+  },
+  {
+   "date": "2026-09-14",
+   "gross": 233.33,
+   "discount": 0.0,
+   "net": 233.33
+  },
+  {
+   "date": "2026-09-15",
+   "gross": 133.33,
+   "discount": 0.0,
+   "net": 133.33
+  },
+  {
+   "date": "2026-09-16",
+   "gross": 554.08,
+   "discount": 0.0,
+   "net": 554.08
+  },
+  {
+   "date": "2026-09-17",
+   "gross": 243.33,
+   "discount": 0.0,
+   "net": 243.33
+  },
+  {
+   "date": "2026-09-18",
+   "gross": 143.33,
+   "discount": 14.33,
+   "net": 129.0
+  },
+  {
+   "date": "2026-09-19",
+   "gross": 193.33,
+   "discount": 0.0,
+   "net": 193.33
+  },
+  {
+   "date": "2026-09-20",
+   "gross": 243.33,
+   "discount": 0.0,
+   "net": 243.33
+  }
+ ]
+}

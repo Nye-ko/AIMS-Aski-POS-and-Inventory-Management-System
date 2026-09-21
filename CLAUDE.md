@@ -21,7 +21,7 @@ npm run dev                # start with --watch on http://localhost:5000
 npm start                  # start without watch
 npm run seed               # run prisma/seeder.js (prisma db seed)
 ```
-No test suite is configured (`npm test` is a stub that exits 1).
+`npm test` runs the forecast-engine tests (`node --test`, no extra dependencies); there is no other test suite yet.
 
 ### Frontend (`frontend/`)
 ```
@@ -56,7 +56,7 @@ Requires a local PostgreSQL database named `aims-pos-ims-db`. `backend/.env` (se
 - Auth (`models/Auth.js`): `AuthModel.login` checks bcrypt-hashed passwords and signs a JWT (`{ id, username, role }`, 12h expiry) for `POST /api/auth/login`. `authenticateToken` middleware verifies `Authorization: Bearer <token>` and is applied to `GET /api/auth/me`, but per the comments in `Auth.js` it is not yet applied across the rest of the routes — most endpoints are not currently JWT-protected server-side even though the frontend gates navigation with it.
 - `backend/config/db.js` sets up a Mongoose/MongoDB connection but is not imported anywhere — the active database layer is Postgres via Prisma. Treat this file as vestigial rather than part of the current architecture.
 - `backend/prisma/schema.prisma` defines the full relational schema: `User` (role-based: CASHIER/SUPERVISOR/ADMIN), `Product`/`Supplier`, `Transaction`/`TransactionItem` (POS sales), `Reconciliation` (end-of-day cash count with denomination breakdown), and purchasing docs (`PurchaseOrder`, `ReceivingReport`, `PurchaseReturn` + their item tables). Money fields use `Decimal(10,2)`; `BigInt.prototype.toJSON` is monkey-patched at the top of `index.js` so BigInt values (e.g. Postgres counts) serialize correctly in JSON responses.
-- Demand forecasting (`models/DemandForecast.js`) calls out to the AI microservice over HTTP (`PYTHON_AI_URL`, default `http://localhost:8000/api/v1/forecast`) and has a JS-only fallback calculation if that service is unreachable — preserve this fallback behavior when touching forecast code.
+- Demand forecasting (`models/DemandForecast.js`) aggregates sales per product per store-local day in SQL (`STORE_TIMEZONE`, default `Asia/Manila`; `FORECAST_HISTORY_DAYS`, default 180), POSTs that to the AI microservice (`PYTHON_AI_URL`, default `http://localhost:8000/api/v1/forecast`, 15s timeout) and falls back to `services/forecastEngine.js` if it is unreachable. The fallback is a deterministic JS twin of `ai-service/forecast_engine.py` (never random) and marks the response `meta.source: "fallback"`. Keep the two engines identical: both are checked against `ai-service/tests/fixtures`; after changing either, run `python tests/make_fixture.py` from `ai-service/` and review the golden diff, then `npm test` in `backend/`.
 - Route handlers consistently: wrap logic in try/catch, `console.error` on failure, and return `res.status(500).json({ error: '...' })`.
 
 ### Frontend
@@ -68,7 +68,7 @@ Requires a local PostgreSQL database named `aims-pos-ims-db`. `backend/.env` (se
 - Styling is Tailwind CSS v4 (via `@tailwindcss/vite`), with some inline `<style>` blocks for custom fonts/scrollbars in `App.jsx`.
 
 ### AI service
-- Single-file FastAPI app (`ai-service/main.py`) with Pydantic request models (`TransactionItemInput`, `ForecastRequest`). `POST /api/v1/forecast` takes raw transaction history and returns projected revenue KPIs, a revenue trajectory, category breakdown, and per-SKU demand/reorder/expiry-risk status. Computation is done with pandas groupby/aggregation, not a trained ML model.
+- `ai-service/main.py` is a thin FastAPI layer (Pydantic validation, `/health`); all forecasting lives in `ai-service/forecast_engine.py` as pure, deterministic, stdlib-only functions (no clock or randomness: "today" comes in as `asOf`). `POST /api/v1/forecast` takes products, per-day per-SKU sales and per-day store totals, and returns KPIs, a revenue trajectory, category breakdown, per-SKU demand/reorder/expiry status with a data-confidence level, and a `meta` block (source, engine version, days of history, warnings). The method is a zero-filled 28-day demand rate, not a trained model. Tests: `python -m unittest discover -s tests` from `ai-service/`.
 
 ## Code style
 

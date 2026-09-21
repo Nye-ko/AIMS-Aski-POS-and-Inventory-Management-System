@@ -79,7 +79,10 @@ export default function Demand() {
     );
   }
 
-  const { kpis, revenueTrajectory, skuDemandList } = forecast;
+  const { kpis, revenueTrajectory, skuDemandList, meta = {} } = forecast;
+  const growthKnown = !!kpis.grossGrowth && kpis.grossGrowth !== 'n/a';
+  const growthDown = growthKnown && String(kpis.grossGrowth).startsWith('-');
+  const horizonDays = kpis.horizonDays || (demandMode === 'future' ? 60 : 30);
 
   return (
     <div className="space-y-6">
@@ -122,6 +125,21 @@ export default function Demand() {
         </div>
       </header>
 
+      {/* DATA-QUALITY NOTICES — say so when numbers come from the built-in engine or thin history */}
+      {(meta.source === 'fallback' || (meta.warnings && meta.warnings.length > 0)) && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-800">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="space-y-0.5">
+            {meta.source === 'fallback' && (
+              <p className="font-bold">AI service is offline — showing the built-in estimate (same method, no trend modelling).</p>
+            )}
+            {(meta.warnings || []).map((w) => (
+              <p key={w}>{w}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* SUMMARY KPI CARDS — same glass-gradient card treatment as finance.jsx's 3 core KPI cards */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {/* Gross Projected Revenue */}
@@ -138,11 +156,11 @@ export default function Demand() {
             ₱{kpis.projectedGross?.toLocaleString() || '0'}
           </h3>
           <div className="flex items-center gap-2 text-xs relative z-10">
-            <span className="inline-flex items-center font-bold px-2.5 py-1 rounded-xl bg-white/70 backdrop-blur-md shadow-sm text-emerald-600">
-              <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-              {kpis.grossGrowth}
+            <span className={`inline-flex items-center font-bold px-2.5 py-1 rounded-xl bg-white/70 backdrop-blur-md shadow-sm ${growthDown ? 'text-rose-600' : growthKnown ? 'text-emerald-600' : 'text-slate-500'}`}>
+              {growthKnown && (growthDown ? <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" /> : <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />)}
+              {kpis.grossGrowth ?? 'n/a'}
             </span>
-            <span className="text-slate-500 font-medium">target trajectory</span>
+            <span className="text-slate-500 font-medium">recent pace vs history · next {horizonDays} days</span>
           </div>
         </div>
 
@@ -179,10 +197,9 @@ export default function Demand() {
           </h3>
           <div className="flex items-center gap-2 text-xs relative z-10">
             <span className="inline-flex items-center font-bold px-2.5 py-1 rounded-xl bg-white/70 backdrop-blur-md shadow-sm text-amber-600">
-              <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-              ~4.5%
+              {kpis.discountRatePct ?? 0}%
             </span>
-            <span className="text-slate-500 font-medium">promotional margin</span>
+            <span className="text-slate-500 font-medium">of gross, from actual discounts</span>
           </div>
         </div>
 
@@ -238,7 +255,7 @@ export default function Demand() {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#64748b' }} />
                 <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(val) => `₱${val}`} />
-                <Tooltip formatter={(value) => [`₱${value}`, 'Revenue']} />
+                <Tooltip formatter={(value, name) => [`₱${Number(value).toLocaleString()}`, name]} />
                 <Area type="monotone" dataKey="actual" stroke="#4f46e5" fillOpacity={1} fill="url(#colorActual)" name="Actual Sales" />
                 <Area type="monotone" dataKey="forecast" stroke="#10b981" strokeDasharray="5 5" fillOpacity={1} fill="url(#colorForecast)" name="AI Forecast" />
               </AreaChart>
@@ -271,6 +288,7 @@ export default function Demand() {
                 <th className="px-4 py-3.5 text-center">Current Stock</th>
                 <th className="px-4 py-3.5 text-center">Daily Demand</th>
                 <th className="px-4 py-3.5 text-center">7-Day Target</th>
+                <th className="px-4 py-3.5 text-center">{horizonDays}-Day Demand</th>
                 <th className="px-4 py-3.5 text-center">Suggested Reorder</th>
                 <th className="px-4 py-3.5 text-right">Status</th>
               </tr>
@@ -279,10 +297,18 @@ export default function Demand() {
               {skuDemandList.map((item, idx) => (
                 <tr key={item.id} className={`hover:bg-slate-50/80 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                   <td className="px-4 py-3.5 font-mono text-[11px] font-bold text-slate-500">{item.sku}</td>
-                  <td className="px-4 py-3.5 font-bold text-slate-900">{item.name}</td>
+                  <td className="px-4 py-3.5 font-bold text-slate-900">
+                    {item.name}
+                    {(item.confidence === 'low' || item.confidence === 'none') && (
+                      <span className="ml-2 text-[10px] font-semibold text-amber-600" title={`${item.dataDays} day(s) of sales history`}>
+                        limited data
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3.5 text-center">{item.stock}</td>
                   <td className="px-4 py-3.5 text-center">{item.dailyDemand} / day</td>
                   <td className="px-4 py-3.5 text-center">{item.forecast7Day}</td>
+                  <td className="px-4 py-3.5 text-center">{item.forecastHorizon}</td>
                   <td className="px-4 py-3.5 text-center font-bold text-blue-600">
                     {item.reorderQty > 0 ? `+${item.reorderQty}` : '0'}
                   </td>

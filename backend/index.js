@@ -735,8 +735,11 @@ app.get('/api/dashboard/summary', authenticateToken, requireRole(...ROLES.DASHBO
 // --- AI FORECASTING ROUTE ---
 app.get('/api/forecast', authenticateToken, requireRole(...ROLES.DASHBOARD), async (req, res) => {
   try {
-    const { days = 30 } = req.query;
-    const forecastData = await DemandForecastModel.getForecastData(days);
+    const { days = 30, asOf } = req.query;
+    if (asOf !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(asOf))) {
+      return res.status(400).json({ success: false, message: 'asOf must be a date like 2026-09-21.' });
+    }
+    const forecastData = await DemandForecastModel.getForecastData(days, { asOf });
 
     res.json({
       success: true,
