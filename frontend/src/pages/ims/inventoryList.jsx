@@ -935,9 +935,9 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
           <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">{filteredProducts.length} items</span>
         </div>
 
-        <div className="relative z-10 overflow-x-auto">
+        <div className="relative z-10 overflow-auto max-h-[700px]">
           <table className="w-full text-left text-xs">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-slate-50">
               <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[11px] tracking-wider font-extrabold">
                 <th className="px-4 py-3.5">Product</th>
                 <th className="px-4 py-3.5">Supplier</th>

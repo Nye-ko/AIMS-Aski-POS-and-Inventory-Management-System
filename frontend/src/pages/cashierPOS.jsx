@@ -72,6 +72,32 @@ function StatCard({ icon: Icon, color, label, value }) {
   );
 }
 
+// Typeable quantity field for the cart. Keeps a local draft while the cashier
+// types (so the field can be temporarily empty) and commits on blur / Enter.
+function QtyInput({ value, onCommit }) {
+  const [draft, setDraft] = useState(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n > 0) onCommit(n);
+    setDraft(null);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft ?? String(value)}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      className="w-9 bg-transparent text-center font-semibold text-[11px] text-slate-800 focus:outline-none focus:bg-white focus:ring-1 focus:ring-indigo-400 rounded"
+    />
+  );
+}
+
 const getGreeting = () => {
   const hour = new Date().getHours();
   if (hour < 12) return "Good Morning";
@@ -278,6 +304,16 @@ export default function CashierPOS() {
     );
   };
 
+  const handleSetQuantity = (id, qty) => {
+    const targetProduct = products.find((p) => p.id === id);
+    let next = qty;
+    if (targetProduct && next > targetProduct.stock) {
+      alert(`Cannot exceed available stock of ${targetProduct.stock}`);
+      next = targetProduct.stock;
+    }
+    setCart((prevCart) => prevCart.map((item) => (item.id === id ? { ...item, quantity: next } : item)));
+  };
+
   const handleRemoveItem = (id) => {
     setCart((prevCart) => prevCart.filter((item) => item.id !== id));
   };
@@ -386,7 +422,6 @@ const handleConfirmSale = async () => {
 
   // Sanitize Enum value ("E-wallet" -> "E_WALLET")
   const formattedPaymentMethod = paymentMethod
-    .toUpperCase()
     .replace('-', '_')
     .replace(' ', '_');
 
@@ -477,7 +512,7 @@ const handleConfirmSale = async () => {
     exportCsv({
       reportNo: `PREVIEW-${Math.floor(1000 + Math.random() * 9000)}`,
       createdAt: new Date().toISOString(),
-      cashier: { username: user?.username || 'Cashier' },
+      cashier: { username: user?.fullName || user?.username || 'Cashier' },
 
       grossSales: eodFigures.gross,
       pointsAvailed: 0.00,
@@ -590,17 +625,17 @@ const handleConfirmSale = async () => {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen w-full bg-gradient-to-br from-slate-100 via-blue-50/60 to-indigo-50/40 p-3 md:p-5 flex gap-3 md:gap-4 overflow-y-auto lg:overflow-hidden font-sans box-border">
+    <div className="min-h-screen lg:h-screen w-full bg-gradient-to-br from-slate-100 via-blue-50/60 to-indigo-50/40 p-2 md:p-3 flex gap-3 md:gap-4 overflow-y-auto lg:overflow-hidden font-sans box-border">
 
       {/* MAIN DASHBOARD SHELL — single canvas, no separate sidebar */}
-      <div className="flex-1 flex flex-col bg-white/80 rounded-3xl shadow-sm border border-indigo-100 p-4 md:p-6 min-h-0 lg:overflow-visible">
+      <div className="flex-1 flex flex-col bg-white/80 rounded-3xl shadow-sm border border-indigo-100 p-3 md:p-4 min-h-0 lg:overflow-visible">
 
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/aski.png" alt="ASKI Logo" className="h-8 w-auto shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">{getGreeting()}, {user?.username || 'Cashier'}</h1>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">{getGreeting()}, {user?.fullName || user?.username || 'Cashier'}</h1>
               <p className="hidden sm:block text-xs text-slate-400 mt-0.5">ASKI Multi-Coop &middot; Cashier POS Terminal</p>
             </div>
           </div>
@@ -646,7 +681,7 @@ const handleConfirmSale = async () => {
               <span className="hidden sm:inline">Logout</span>
             </button>
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0B132B] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
-              {(user?.username || "C").charAt(0).toUpperCase()}
+              {(user?.fullName || user?.username || "C").charAt(0).toUpperCase()}
             </div>
           </div>
         </div>
@@ -736,19 +771,19 @@ const handleConfirmSale = async () => {
 
             {/* Product Grid */}
             <div className="flex-1 bg-white/80 rounded-2xl p-3 overflow-y-auto min-h-0 border border-indigo-100 shadow-sm">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 {filteredProducts.map((product) => (
                   <div
                     key={product.id}
                     onClick={() => handleAddToCart(product)}
-                    className="bg-white/90 rounded-2xl p-3 flex flex-col justify-between cursor-pointer border border-indigo-100/80 shadow-sm hover:border-blue-400 hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5 transition-all duration-200"
+                    className="aspect-square bg-white/90 rounded-2xl p-3 flex flex-col cursor-pointer border border-indigo-100/80 shadow-sm hover:border-blue-400 hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5 transition-all duration-200"
                   >
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-100/60 rounded-xl h-20 w-full flex items-center justify-center mb-2.5">
+                    <div className="flex-1 min-h-0 bg-gradient-to-br from-blue-50 to-indigo-100/60 rounded-xl w-full flex items-center justify-center mb-2.5">
                       <div className="bg-white/80 p-3 rounded-full shadow-sm">
                         <CategoryIcon category={product.category} className="w-5 h-5 text-indigo-600" />
                       </div>
                     </div>
-                    <div className="text-slate-800 font-medium text-xs">
+                    <div className="text-slate-800 font-medium text-xs shrink-0">
                       <div className="truncate font-semibold text-slate-900">{product.name}</div>
                       <div className="flex justify-between items-center mt-1.5">
                         <span className="text-slate-900 font-bold">
@@ -851,9 +886,7 @@ const handleConfirmSale = async () => {
                             <button onClick={() => handleUpdateQuantity(item.id, -1)} className="text-blue-500 hover:text-blue-700 p-0.5 cursor-pointer">
                               <Minus className="w-2.5 h-2.5" />
                             </button>
-                            <span className="font-semibold text-[11px] px-0.5 min-w-[10px] text-center text-slate-800">
-                              {item.quantity}
-                            </span>
+                            <QtyInput value={item.quantity} onCommit={(n) => handleSetQuantity(item.id, n)} />
                             <button onClick={() => handleUpdateQuantity(item.id, 1)} className="text-blue-500 hover:text-blue-700 p-0.5 cursor-pointer">
                               <Plus className="w-2.5 h-2.5" />
                             </button>

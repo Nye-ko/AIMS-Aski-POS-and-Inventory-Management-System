@@ -95,7 +95,9 @@ export function AuthProvider({ children }) {
   );
 
   const value = useMemo(() => {
-    const user = session ? { id: session.id, username: session.username, role: session.role } : null;
+    const user = session
+      ? { id: session.id, username: session.username, fullName: session.fullName, role: session.role }
+      : null;
     return {
       user,
       token: session?.token || null,

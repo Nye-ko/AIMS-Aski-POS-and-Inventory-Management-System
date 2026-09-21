@@ -50,7 +50,7 @@ const AuthModel = {
 
     if (!user.isActive) throw new AuthError('This account has been deactivated. Contact an administrator.');
 
-    const payload = { id: user.id, username: user.username, role: user.role };
+    const payload = { id: user.id, username: user.username, fullName: user.fullName, role: user.role };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     return { token, user: payload };
   },

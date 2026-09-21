@@ -19,7 +19,7 @@ enum Role {
 enum PaymentMethod {
   CASH
   CARD
-  E_Wallet
+  E_wallet
 }
 
 enum ReconciliationStatus {
