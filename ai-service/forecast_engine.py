@@ -5,9 +5,12 @@ randomness), which keeps forecasts reproducible and lets the backend's JavaScrip
 (backend/services/forecastEngine.js) implement the identical algorithm. Both are checked against the
 same golden fixture (ai-service/tests/fixtures), so change them together.
 
-Method (engine "rate-mean"): demand rate = units sold per calendar day over the last RATE_WINDOW_DAYS
-days the product existed, counting days with no sales as zero. Revenue is projected the same way at
-store level. Phase 3 of the forecasting plan replaces this with per-SKU model selection.
+Engine "rate-mean" 2.0.0: demand rate = units sold per calendar day over the last 28 days a product
+existed, counting days with no sales as zero but skipping days the product was out of stock (those
+zeros are lost sales, not lack of demand). Store revenue uses the last 14 days, which follows a moving
+level sooner than 28 does (measured with backtest.py, see CLAUDE.md). Every forecast carries an 80% range.
+Version 1.0.0 (28 days for revenue, stock-outs ignored, no ranges) stays available behind `legacy=True`
+so the backtest can keep proving that the current version is better than the one it replaced.
 
 Money is summed in integer cents so results do not depend on row order. Dates are ISO
 "YYYY-MM-DD" strings in the store's local time zone, supplied by the caller.
@@ -15,13 +18,18 @@ Money is summed in integer cents so results do not depend on row order. Dates ar
 import math
 from datetime import date
 
-ENGINE_NAME = "rate-mean"
-ENGINE_VERSION = "1.0.0"
+from forecast_stats import range_for_total, sample_variance, window_mean
 
-RATE_WINDOW_DAYS = 28          # how many recent days set the demand rate
+ENGINE_NAME = "rate-mean"
+ENGINE_VERSION = "2.0.0"
+LEGACY_VERSION = "1.0.0"
+
+RATE_WINDOW_DAYS = 28          # how many recent days set a product's demand rate
+REVENUE_WINDOW_DAYS = 14       # how many recent days set the store's revenue rate
 TRAJECTORY_HISTORY_DAYS = 30   # days of actuals drawn before the forecast line
 EXPIRY_HORIZON_DAYS = 180      # only judge sell-through against expiry dates this close
 MIN_DAYS_FOR_GROWTH = 14       # below this, growth and confidence are not meaningful
+MIN_USABLE_DAYS = 7            # fewer in-stock days than this in the window: stock-outs are not excluded
 EPS = 1e-9
 
 STATUS_REORDER = "REORDER NOW"
@@ -65,7 +73,9 @@ def _confidence(data_days):
     return "high"
 
 
-def build_forecast(payload, source="ai-service"):
+def build_forecast(payload, source="ai-service", legacy=False):
+    version = LEGACY_VERSION if legacy else ENGINE_VERSION
+    revenue_window = RATE_WINDOW_DAYS if legacy else REVENUE_WINDOW_DAYS
     as_of = _day(payload["asOf"])
     horizon = int(payload["daysToForecast"])
     history_days = int(payload.get("historyDays", 180))
@@ -92,6 +102,14 @@ def build_forecast(payload, source="ai-service"):
     if ignored:
         warnings.append(f"{ignored} sales rows ignored (unknown product).")
 
+    # --- days each product was out of stock (its zero sales there are not demand) --------------
+    stockout_days = {}
+    if not legacy:
+        for s in payload.get("stockouts") or []:
+            d = _day(s["date"])
+            if window_start <= d <= window_end and s["sku"] in known:
+                stockout_days.setdefault(s["sku"], set()).add(d)
+
     # --- store-level daily gross / discount (cents) --------------------------------------------
     store_days = {}
     totals = payload.get("dailyTotals") or []
@@ -116,23 +134,29 @@ def build_forecast(payload, source="ai-service"):
     elif observed_days < MIN_DAYS_FOR_GROWTH:
         warnings.append(f"Only {observed_days} days of sales history; forecasts are low confidence.")
 
-    # --- store revenue rate, discounts, growth -------------------------------------------------
-    rate_gross_cents = 0.0
+    # --- store revenue: rate, range, discounts, growth -----------------------------------------
+    rate_cents = 0.0
+    level_days = 1
+    store_variance = None
     discount_ratio = 0.0
     growth_pct = None
     if store_start is not None:
-        rate_start = max(store_start, window_end - RATE_WINDOW_DAYS + 1)
-        rate_days = window_end - rate_start + 1
-        rate_gross_cents = sum(store_days.get(d, [0, 0])[0] for d in range(rate_start, window_end + 1)) / rate_days
+        first = max(store_start, window_end - RATE_WINDOW_DAYS + 1)
+        recent = [store_days.get(d, [0, 0])[0] for d in range(first, window_end + 1)]
+        rate_cents, level_days = window_mean(recent, revenue_window)
+        store_variance = sample_variance(recent)
 
         total_gross = sum(v[0] for v in store_days.values())
         total_discount = sum(v[1] for v in store_days.values())
         discount_ratio = total_discount / total_gross if total_gross > 0 else 0.0
         hist_avg = total_gross / observed_days
         if observed_days >= MIN_DAYS_FOR_GROWTH and hist_avg > 0:
-            growth_pct = _round((rate_gross_cents / hist_avg - 1) * 100, 1)
+            growth_pct = _round((rate_cents / hist_avg - 1) * 100, 1)
 
-    projected_gross = _round(rate_gross_cents * horizon / 100, 2)
+    low_cents, high_cents = range_for_total(rate_cents, level_days, store_variance, horizon)
+    projected_gross = _round(rate_cents * horizon / 100, 2)
+    projected_low = _round(low_cents / 100, 2)
+    projected_high = _round(high_cents / 100, 2)
     projected_discounts = _round(projected_gross * discount_ratio, 2)
     projected_net = _round(projected_gross - projected_discounts, 2)
     if growth_pct is None:
@@ -140,7 +164,7 @@ def build_forecast(payload, source="ai-service"):
     else:
         gross_growth = f"{'+' if growth_pct >= 0 else '-'}{abs(growth_pct):.1f}%"
 
-    # --- trajectory: recent actuals, then a flat daily forecast --------------------------------
+    # --- trajectory: recent actuals, then the daily forecast with its range --------------------
     trajectory = []
     if store_start is not None:
         first = max(store_start, window_end - TRAJECTORY_HISTORY_DAYS + 1)
@@ -148,12 +172,18 @@ def build_forecast(payload, source="ai-service"):
             trajectory.append({
                 "day": _label(d), "date": _iso(d),
                 "actual": _round(store_days.get(d, [0, 0])[0] / 100, 2), "forecast": None,
+                "forecastLow": None, "forecastHigh": None,
             })
-        trajectory[-1]["forecast"] = trajectory[-1]["actual"]   # join the two lines
-        daily_forecast = _round(rate_gross_cents / 100, 2)
+        joint = trajectory[-1]              # join the two lines
+        joint["forecast"] = joint["forecastLow"] = joint["forecastHigh"] = joint["actual"]
+        day_low, day_high = range_for_total(rate_cents, level_days, store_variance, 1)
         for i in range(horizon):
             d = as_of + i
-            trajectory.append({"day": _label(d), "date": _iso(d), "actual": None, "forecast": daily_forecast})
+            trajectory.append({
+                "day": _label(d), "date": _iso(d), "actual": None,
+                "forecast": _round(rate_cents / 100, 2),
+                "forecastLow": _round(day_low / 100, 2), "forecastHigh": _round(day_high / 100, 2),
+            })
 
     # --- per-SKU demand and status -------------------------------------------------------------
     items = []
@@ -170,17 +200,28 @@ def build_forecast(payload, source="ai-service"):
             sku_start = max(min(candidates) if candidates else store_start, store_start)
 
         data_days = 0
-        units = 0
         cents = 0
+        rate = 0.0
+        low7 = high7 = 0.0
+        stockouts = 0
+        adjusted = False
         if sku_start is not None and sku_start <= window_end:
             rate_start = max(sku_start, window_end - RATE_WINDOW_DAYS + 1)
-            data_days = window_end - rate_start + 1
             for d in range(rate_start, window_end + 1):
                 cell = by_day.get(d)
                 if cell:
-                    units += cell[0]
                     cents += cell[1]
-        rate = units / data_days if data_days > 0 else 0.0
+
+            out = stockout_days.get(p["sku"], set())
+            stockouts = sum(1 for d in range(rate_start, window_end + 1) if d in out)
+            if stockouts and (window_end - rate_start + 1) - stockouts < MIN_USABLE_DAYS:
+                out = set()                 # nearly always sold out: too little left to learn from
+                stockouts = 0
+            adjusted = stockouts > 0
+
+            recent = [None if d in out else by_day.get(d, [0, 0])[0] for d in range(rate_start, window_end + 1)]
+            rate, data_days = window_mean(recent, RATE_WINDOW_DAYS)
+            low7, high7 = range_for_total(rate, data_days, sample_variance(recent), 7, count_data=True)
 
         stock = max(0, int(p.get("stock") or 0))
         forecast7 = rate * 7
@@ -208,12 +249,16 @@ def build_forecast(payload, source="ai-service"):
             "minStock": int(p.get("minStock") or 0),
             "dailyDemand": _round(rate, 2),
             "forecast7Day": _round(forecast7, 1),
+            "forecast7Low": _round(low7, 1),
+            "forecast7High": _round(high7, 1),
             "forecastHorizon": _round(rate * horizon, 1),
             "reorderQty": int(math.ceil(max(0.0, forecast7 - stock) - EPS)),
             "daysOfCover": _round(stock / rate, 1) if rate > 0 else None,
             "status": status,
             "confidence": _confidence(data_days),
             "dataDays": data_days,
+            "stockoutDays": stockouts,
+            "stockoutAdjusted": adjusted,
         })
     items.sort(key=lambda i: (_STATUS_ORDER[i["status"]], i["sku"]))
 
@@ -232,6 +277,8 @@ def build_forecast(payload, source="ai-service"):
     return {
         "kpis": {
             "projectedGross": projected_gross,
+            "projectedGrossLow": projected_low,
+            "projectedGrossHigh": projected_high,
             "projectedNet": projected_net,
             "projectedDiscounts": projected_discounts,
             "discountRatePct": _round(discount_ratio * 100, 2),
@@ -245,12 +292,14 @@ def build_forecast(payload, source="ai-service"):
         "meta": {
             "source": source,
             "engine": ENGINE_NAME,
-            "engineVersion": ENGINE_VERSION,
+            "engineVersion": version,
             "asOf": payload["asOf"],
             "timezone": payload.get("timezone"),
             "historyDays": history_days,
             "observedDays": observed_days,
             "rateWindowDays": RATE_WINDOW_DAYS,
+            "revenueWindowDays": revenue_window,
+            "rangeLevel": 0.8,
             "skuCount": len(items),
             "lowData": observed_days < MIN_DAYS_FOR_GROWTH,
             "warnings": warnings,

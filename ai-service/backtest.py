@@ -12,7 +12,9 @@ and bias (net over/under-forecast as a share of actuals). Pure functions, stdlib
 import math
 from datetime import date
 
-from forecast_engine import ENGINE_NAME, ENGINE_VERSION, MIN_DAYS_FOR_GROWTH, build_forecast
+from forecast_engine import (
+    ENGINE_NAME, ENGINE_VERSION, LEGACY_VERSION, MIN_DAYS_FOR_GROWTH, build_forecast,
+)
 
 UNITS_HORIZON = 7
 REVENUE_HORIZONS = (7, 30)
@@ -93,7 +95,25 @@ def summarize(rows):
     }
 
 
-def run_backtest(payload, max_origins=MAX_ORIGINS):
+def _coverage(rows):
+    """rows: [(low, high, actual)] -> share of actuals that fell inside the forecast range."""
+    if not rows:
+        return {"n": 0, "coverage": None}
+    inside = sum(1 for lo, hi, a in rows if lo <= a <= hi)
+    return {"n": len(rows), "coverage": _r(inside / len(rows))}
+
+
+def _versus(summary, legacy_pairs):
+    """Adds the original engine's error next to the model's, and how much better the model is."""
+    legacy = _errors(legacy_pairs)
+    summary["legacy"] = legacy
+    wape = summary["model"]["wape"]
+    summary["skillVsLegacy"] = _r(1 - wape / legacy["wape"]) if wape is not None and legacy["wape"] not in (None, 0) else None
+
+
+def run_backtest(payload, max_origins=MAX_ORIGINS, compare=True):
+    """Replays the production engine. With compare=True the previous engine version (1.0.0) is replayed on
+    the same origins, so the result also says whether the current version really is better."""
     as_of = _day(payload["asOf"])
     history_days = int(payload.get("historyDays", 180))
     window_end = as_of - 1
@@ -152,33 +172,55 @@ def run_backtest(payload, max_origins=MAX_ORIGINS):
         return sum(series.get(d, 0) for d in range(lo, hi + 1))
 
     unit_rows = []                       # (forecast, actual, naive)
+    unit_cover = []                      # (low, high, actual)
+    unit_legacy = []                     # (legacy forecast, actual)
+    sku_legacy = {}
+    rev_cover = []
+    rev_legacy = {h: [] for h in REVENUE_HORIZONS}
     sku_rows = {}                        # sku -> [(forecast, actual, naive)]
     rev_rows = {h: [] for h in REVENUE_HORIZONS}
 
     for o in origins:
-        forecast = build_forecast({**payload, "asOf": _iso(o), "daysToForecast": max(REVENUE_HORIZONS)}, source="backtest")
+        step = {**payload, "asOf": _iso(o), "daysToForecast": max(REVENUE_HORIZONS)}
+        forecast = build_forecast(step, source="backtest")
+        legacy = build_forecast(step, source="backtest", legacy=True) if compare else None
+        legacy_units = {i["sku"]: i["forecast7Day"] for i in legacy["skuDemandList"]} if legacy else {}
 
         for item in forecast["skuDemandList"]:
             if item["dataDays"] <= 0:
                 continue                 # product did not exist yet at this origin
             series = units.get(item["sku"], {})
-            row = (
-                item["forecast7Day"],
-                total(series, o, o + UNITS_HORIZON - 1),
-                total(series, o - UNITS_HORIZON, o - 1),
-            )
+            actual = total(series, o, o + UNITS_HORIZON - 1)
+            row = (item["forecast7Day"], actual, total(series, o - UNITS_HORIZON, o - 1))
             unit_rows.append(row)
             sku_rows.setdefault(item["sku"], []).append(row)
+            unit_cover.append((item["forecast7Low"], item["forecast7High"], actual))
+            if legacy:
+                unit_legacy.append((legacy_units[item["sku"]], actual))
+                sku_legacy.setdefault(item["sku"], []).append((legacy_units[item["sku"]], actual))
 
         future = [p["forecast"] for p in forecast["revenueTrajectory"] if p["actual"] is None]
+        legacy_future = [p["forecast"] for p in legacy["revenueTrajectory"] if p["actual"] is None] if legacy else []
         for h in REVENUE_HORIZONS:
             if o + h - 1 > window_end or o - h < store_start or len(future) < h:
                 continue                 # outcome not fully observed yet, or too little history for the baseline
-            rev_rows[h].append((sum(future[:h]), total(gross, o, o + h - 1), total(gross, o - h, o - 1)))
+            actual = total(gross, o, o + h - 1)
+            rev_rows[h].append((_add(future[:h]), actual, total(gross, o - h, o - 1)))
+            if legacy:
+                rev_legacy[h].append((_add(legacy_future[:h]), actual))
+            if h == max(REVENUE_HORIZONS):          # only the full-horizon range is computed
+                rev_cover.append((forecast["kpis"]["projectedGrossLow"], forecast["kpis"]["projectedGrossHigh"], actual))
 
     result["units7"] = summarize(unit_rows)
     result["revenue7"] = summarize(rev_rows[7])
     result["revenue30"] = summarize(rev_rows[30])
+    result["units7"]["range"] = _coverage(unit_cover)
+    result["revenue30"]["range"] = _coverage(rev_cover)
+    if compare:
+        _versus(result["units7"], unit_legacy)
+        _versus(result["revenue7"], rev_legacy[7])
+        _versus(result["revenue30"], rev_legacy[30])
+        meta["comparedWith"] = {"engine": ENGINE_NAME, "engineVersion": LEGACY_VERSION}
 
     per_sku = []
     for sku, rows in sku_rows.items():
@@ -194,6 +236,7 @@ def run_backtest(payload, max_origins=MAX_ORIGINS):
             "wape": s["model"]["wape"],
             "bias": s["model"]["bias"],
             "baselineWape": s["baseline"]["wape"],
+            "legacyWape": _errors(sku_legacy[sku])["wape"] if sku in sku_legacy else None,
             "beatsBaseline": (
                 s["model"]["wape"] < s["baseline"]["wape"]
                 if s["model"]["wape"] is not None and s["baseline"]["wape"] is not None

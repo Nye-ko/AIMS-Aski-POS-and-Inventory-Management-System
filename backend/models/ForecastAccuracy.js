@@ -16,8 +16,14 @@ const isoDate = (d) => d.toISOString().slice(0, 10);
 // Saved forecasts vs what really sold since. Grading a snapshot needs its whole horizon to be in the past.
 const getLiveAccuracy = async (today) => {
   const cutoff = new Date(Date.parse(`${isoFromDay(dayNumber(today) - LIVE_WINDOW_DAYS)}T00:00:00Z`));
+  // Only the engine version that is currently saving forecasts is graded, so a day is never counted twice
+  // when a version change left two snapshots for the same date.
+  const latest = await prisma.forecastSnapshot.findFirst({
+    orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }],
+    select: { model: true },
+  });
   const rows = await prisma.forecastSnapshot.findMany({
-    where: { asOf: { gte: cutoff } },
+    where: { asOf: { gte: cutoff }, ...(latest ? { model: latest.model } : {}) },
     include: { items: true },
     orderBy: { asOf: 'asc' },
   });
@@ -44,13 +50,15 @@ const getLiveAccuracy = async (today) => {
     grossByDay = new Map(totalRows.map((r) => [dayNumber(r.date), r.gross]));
   }
 
-  return gradeSnapshots({
+  const graded = gradeSnapshots({
     snapshots,
     unitsByProduct,
     grossByDay,
     lastCompleteDay: isoFromDay(dayNumber(today) - 1),
     storeStart,
   });
+  graded.meta.model = latest ? latest.model : null;
+  return graded;
 };
 
 // The AI service replays its own engine over your history. Cached briefly: it is the heavier call and

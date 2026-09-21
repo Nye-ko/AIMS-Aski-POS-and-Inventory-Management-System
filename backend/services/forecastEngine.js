@@ -5,16 +5,24 @@
 // shared golden fixture (ai-service/tests/fixtures, checked by backend/test/forecastEngine.test.js):
 // change one, change the other, regenerate the fixture with `python tests/make_fixture.py`.
 //
+// Engine "rate-mean" 2.0.0: a product's demand rate is units per calendar day over its last 28 days,
+// zero days included but days it was out of stock skipped; store revenue uses the last 14 days; every
+// forecast carries an 80% range. See the header of ai-service/forecast_engine.py for the reasoning.
+//
 // Money is summed in integer cents so results do not depend on row order. Dates are ISO "YYYY-MM-DD"
 // strings in the store's local time zone.
 
-const ENGINE_NAME = 'rate-mean';
-const ENGINE_VERSION = '1.0.0';
+const { windowMean, sampleVariance, rangeForTotal } = require('./forecastStats');
 
-const RATE_WINDOW_DAYS = 28;
+const ENGINE_NAME = 'rate-mean';
+const ENGINE_VERSION = '2.0.0';
+
+const RATE_WINDOW_DAYS = 28; // a product's demand rate
+const REVENUE_WINDOW_DAYS = 14; // the store's revenue rate
 const TRAJECTORY_HISTORY_DAYS = 30;
 const EXPIRY_HORIZON_DAYS = 180;
 const MIN_DAYS_FOR_GROWTH = 14;
+const MIN_USABLE_DAYS = 7; // fewer in-stock days than this in the window: stock-outs are not excluded
 const EPS = 1e-9;
 
 const STATUS_REORDER = 'REORDER NOW';
@@ -83,6 +91,16 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
   }
   if (ignored) warnings.push(`${ignored} sales rows ignored (unknown product).`);
 
+  // --- days each product was out of stock (its zero sales there are not demand) ---------------
+  const stockoutDays = new Map(); // sku -> Set(day)
+  for (const s of payload.stockouts || []) {
+    const d = day(s.date);
+    if (d >= windowStart && d <= windowEnd && known.has(s.sku)) {
+      if (!stockoutDays.has(s.sku)) stockoutDays.set(s.sku, new Set());
+      stockoutDays.get(s.sku).add(d);
+    }
+  }
+
   // --- store-level daily gross / discount (cents) ---------------------------------------------
   const storeDays = new Map(); // day -> [gross, discount]
   const totals = payload.dailyTotals || [];
@@ -118,43 +136,67 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
 
   const storeGross = (d) => (storeDays.get(d) || [0, 0])[0];
 
-  // --- store revenue rate, discounts, growth --------------------------------------------------
-  let rateGrossCents = 0;
+  // --- store revenue: rate, range, discounts, growth -----------------------------------------
+  let rateCents = 0;
+  let levelDays = 1;
+  let storeVariance = null;
   let discountRatio = 0;
   let growthPct = null;
   if (storeStart !== null) {
-    const rateStart = Math.max(storeStart, windowEnd - RATE_WINDOW_DAYS + 1);
-    const rateDays = windowEnd - rateStart + 1;
-    let g = 0;
-    for (let d = rateStart; d <= windowEnd; d += 1) g += storeGross(d);
-    rateGrossCents = g / rateDays;
+    const first = Math.max(storeStart, windowEnd - RATE_WINDOW_DAYS + 1);
+    const recent = [];
+    for (let d = first; d <= windowEnd; d += 1) recent.push(storeGross(d));
+    const level = windowMean(recent, REVENUE_WINDOW_DAYS);
+    rateCents = level.mean;
+    levelDays = level.count;
+    storeVariance = sampleVariance(recent);
 
     const totalGross = sum([...storeDays.values()].map((v) => v[0]));
     const totalDiscount = sum([...storeDays.values()].map((v) => v[1]));
     discountRatio = totalGross > 0 ? totalDiscount / totalGross : 0;
     const histAvg = totalGross / observedDays;
     if (observedDays >= MIN_DAYS_FOR_GROWTH && histAvg > 0) {
-      growthPct = round((rateGrossCents / histAvg - 1) * 100, 1);
+      growthPct = round((rateCents / histAvg - 1) * 100, 1);
     }
   }
 
-  const projectedGross = round((rateGrossCents * horizon) / 100, 2);
+  const [lowCents, highCents] = rangeForTotal(rateCents, levelDays, storeVariance, horizon);
+  const projectedGross = round((rateCents * horizon) / 100, 2);
+  const projectedLow = round(lowCents / 100, 2);
+  const projectedHigh = round(highCents / 100, 2);
   const projectedDiscounts = round(projectedGross * discountRatio, 2);
   const projectedNet = round(projectedGross - projectedDiscounts, 2);
   const grossGrowth = growthPct === null ? 'n/a' : `${growthPct >= 0 ? '+' : '-'}${Math.abs(growthPct).toFixed(1)}%`;
 
-  // --- trajectory: recent actuals, then a flat daily forecast ---------------------------------
+  // --- trajectory: recent actuals, then the daily forecast with its range --------------------
   const trajectory = [];
   if (storeStart !== null) {
     const first = Math.max(storeStart, windowEnd - TRAJECTORY_HISTORY_DAYS + 1);
     for (let d = first; d <= windowEnd; d += 1) {
-      trajectory.push({ day: label(d), date: toIso(d), actual: round(storeGross(d) / 100, 2), forecast: null });
+      trajectory.push({
+        day: label(d),
+        date: toIso(d),
+        actual: round(storeGross(d) / 100, 2),
+        forecast: null,
+        forecastLow: null,
+        forecastHigh: null,
+      });
     }
-    trajectory[trajectory.length - 1].forecast = trajectory[trajectory.length - 1].actual; // join the two lines
-    const dailyForecast = round(rateGrossCents / 100, 2);
+    const joint = trajectory[trajectory.length - 1]; // join the two lines
+    joint.forecast = joint.actual;
+    joint.forecastLow = joint.actual;
+    joint.forecastHigh = joint.actual;
+    const [dayLow, dayHigh] = rangeForTotal(rateCents, levelDays, storeVariance, 1);
     for (let i = 0; i < horizon; i += 1) {
       const d = asOf + i;
-      trajectory.push({ day: label(d), date: toIso(d), actual: null, forecast: dailyForecast });
+      trajectory.push({
+        day: label(d),
+        date: toIso(d),
+        actual: null,
+        forecast: round(rateCents / 100, 2),
+        forecastLow: round(dayLow / 100, 2),
+        forecastHigh: round(dayHigh / 100, 2),
+      });
     }
   }
 
@@ -172,20 +214,34 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
     }
 
     let dataDays = 0;
-    let units = 0;
     let c = 0;
+    let rate = 0;
+    let low7 = 0;
+    let high7 = 0;
+    let stockouts = 0;
+    let adjusted = false;
     if (skuStart !== null && skuStart <= windowEnd) {
       const rateStart = Math.max(skuStart, windowEnd - RATE_WINDOW_DAYS + 1);
-      dataDays = windowEnd - rateStart + 1;
       for (let d = rateStart; d <= windowEnd; d += 1) {
         const cell = byDay.get(d);
-        if (cell) {
-          units += cell[0];
-          c += cell[1];
-        }
+        if (cell) c += cell[1];
       }
+
+      let out = stockoutDays.get(p.sku) || new Set();
+      for (let d = rateStart; d <= windowEnd; d += 1) if (out.has(d)) stockouts += 1;
+      if (stockouts && windowEnd - rateStart + 1 - stockouts < MIN_USABLE_DAYS) {
+        out = new Set(); // nearly always sold out: too little left to learn from
+        stockouts = 0;
+      }
+      adjusted = stockouts > 0;
+
+      const recent = [];
+      for (let d = rateStart; d <= windowEnd; d += 1) recent.push(out.has(d) ? null : (byDay.get(d) || [0, 0])[0]);
+      const level = windowMean(recent, RATE_WINDOW_DAYS);
+      rate = level.mean;
+      dataDays = level.count;
+      [low7, high7] = rangeForTotal(rate, dataDays, sampleVariance(recent), 7, true);
     }
-    const rate = dataDays > 0 ? units / dataDays : 0;
 
     const stock = Math.max(0, Math.trunc(Number(p.stock) || 0));
     const forecast7 = rate * 7;
@@ -219,12 +275,16 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       minStock: Math.trunc(Number(p.minStock) || 0),
       dailyDemand: round(rate, 2),
       forecast7Day: round(forecast7, 1),
+      forecast7Low: round(low7, 1),
+      forecast7High: round(high7, 1),
       forecastHorizon: round(rate * horizon, 1),
       reorderQty: Math.ceil(Math.max(0, forecast7 - stock) - EPS) + 0, // + 0 turns -0 into 0
       daysOfCover: rate > 0 ? round(stock / rate, 1) : null,
       status,
       confidence: confidence(dataDays),
       dataDays,
+      stockoutDays: stockouts,
+      stockoutAdjusted: adjusted,
     });
   }
   items.sort((a, b) => {
@@ -254,6 +314,8 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
   return {
     kpis: {
       projectedGross,
+      projectedGrossLow: projectedLow,
+      projectedGrossHigh: projectedHigh,
       projectedNet,
       projectedDiscounts,
       discountRatePct: round(discountRatio * 100, 2),
@@ -273,6 +335,8 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       historyDays,
       observedDays,
       rateWindowDays: RATE_WINDOW_DAYS,
+      revenueWindowDays: REVENUE_WINDOW_DAYS,
+      rangeLevel: 0.8,
       skuCount: items.length,
       lowData: observedDays < MIN_DAYS_FOR_GROWTH,
       warnings,

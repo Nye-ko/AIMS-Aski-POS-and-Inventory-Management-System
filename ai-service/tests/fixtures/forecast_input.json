@@ -890,5 +890,127 @@
    "discount": 0.0,
    "net": 243.33
   }
+ ],
+ "stockouts": [
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-18"
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-17"
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-11"
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-10"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-20"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-19"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-18"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-17"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-16"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-15"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-14"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-13"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-12"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-11"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-10"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-09"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-08"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-07"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-06"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-05"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-04"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-03"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-02"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-09-01"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-31"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-30"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-29"
+  },
+  {
+   "sku": "SPARSE-1",
+   "date": "2026-08-28"
+  },
+  {
+   "sku": "STEADY-1",
+   "date": "2026-09-21"
+  },
+  {
+   "sku": "GHOST",
+   "date": "2026-09-19"
+  }
  ]
 }

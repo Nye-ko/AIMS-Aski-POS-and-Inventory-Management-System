@@ -2,10 +2,14 @@ const { prisma } = require('./Product');
 const axios = require('axios');
 const { buildForecast } = require('../services/forecastEngine');
 const { loadDailySales } = require('./salesHistory');
+const { loadStockoutDays } = require('./stockHistory');
 
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || 'http://localhost:8000/api/v1/forecast';
 const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS) || 15000;
 const HISTORY_DAYS = Number(process.env.FORECAST_HISTORY_DAYS) || 180;
+// Stock-out days are only needed for recent demand (a 28-day window, plus the backtest's replays), so
+// only this many days back are sent; a product stuck at zero stock would otherwise add a row per day.
+const STOCKOUT_LOOKBACK_DAYS = 90;
 const MIN_HORIZON_DAYS = 1;
 const MAX_HORIZON_DAYS = 365;
 const MS_PER_DAY = 86400000;
@@ -38,12 +42,19 @@ const loadForecastInput = async (daysToForecast, asOf) => {
   // Coarse UTC lower bound (a couple of days of slack); the engine applies the exact window.
   const lowerBound = new Date(Date.parse(`${asOf}T00:00:00Z`) - (HISTORY_DAYS + 2) * MS_PER_DAY);
 
-  const [products, { salesRows, totalRows }] = await Promise.all([
+  const stockoutFrom = new Date(Date.parse(`${asOf}T00:00:00Z`) - (STOCKOUT_LOOKBACK_DAYS + 2) * MS_PER_DAY);
+  const [products, { salesRows, totalRows }, stockoutsByProduct] = await Promise.all([
     prisma.product.findMany({
       select: { id: true, sku: true, name: true, category: true, stock: true, minStock: true, expiryDate: true, createdAt: true },
       orderBy: { id: 'asc' },
     }),
     loadDailySales({ since: lowerBound, timeZone }),
+    loadStockoutDays({
+      since: stockoutFrom,
+      timeZone,
+      fromDay: localDate(stockoutFrom, timeZone),
+      lastDay: new Date(Date.parse(`${asOf}T00:00:00Z`) - MS_PER_DAY).toISOString().slice(0, 10),
+    }),
   ]);
 
   const skuById = new Map();
@@ -73,6 +84,9 @@ const loadForecastInput = async (daysToForecast, asOf) => {
       .filter((r) => skuById.has(r.productId))
       .map((r) => ({ sku: skuById.get(r.productId), date: r.date, quantity: r.quantity, revenue: r.revenue })),
     dailyTotals: totalRows.map((r) => ({ date: r.date, gross: r.gross, discount: r.discount, net: r.net })),
+    stockouts: [...stockoutsByProduct]
+      .filter(([productId]) => skuById.has(productId))
+      .flatMap(([productId, dates]) => dates.map((date) => ({ sku: skuById.get(productId), date }))),
   };
 };
 

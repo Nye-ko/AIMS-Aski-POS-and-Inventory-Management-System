@@ -47,6 +47,12 @@ class DailyTotalInput(BaseModel):
     net: float = Field(ge=0)
 
 
+class StockoutInput(BaseModel):
+    """A store-local day on which the product was out of stock (its zero sales say nothing about demand)."""
+    sku: str
+    date: IsoDate
+
+
 class ForecastRequest(BaseModel):
     asOf: IsoDate          # today in the store's time zone; history ends yesterday
     timezone: Optional[str] = None
@@ -55,6 +61,7 @@ class ForecastRequest(BaseModel):
     products: List[ProductInput]
     sales: List[SaleInput] = []
     dailyTotals: List[DailyTotalInput] = []
+    stockouts: List[StockoutInput] = []
 
 
 class BacktestRequest(ForecastRequest):

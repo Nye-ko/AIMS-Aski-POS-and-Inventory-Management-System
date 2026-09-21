@@ -110,6 +110,19 @@ function AccuracyCard({ accuracy, failed }) {
               {backtest.meta.firstOrigin && <> ({backtest.meta.firstOrigin} to {backtest.meta.lastOrigin})</>} using {observed} days of sales history.
               {observed < 60 && ' That is a short record, so treat these as a rough guide.'}
             </p>
+            {(backtest.units7?.range?.coverage != null || backtest.units7?.legacy?.wape != null) && (
+              <p className="text-[11px] text-slate-500">
+                {backtest.units7?.range?.coverage != null && (
+                  <>Actual product sales landed inside the forecast range {pct(backtest.units7.range.coverage)} of the time (the range aims for 80%). </>
+                )}
+                {backtest.units7?.legacy?.wape != null && (
+                  <>
+                    The previous method (v{backtest.meta.comparedWith?.engineVersion}) missed {pct(backtest.units7.legacy.wape)} on product demand
+                    {backtest.revenue7?.legacy?.wape != null && <> and {pct(backtest.revenue7.legacy.wape)} on weekly revenue</>} over the same days.
+                  </>
+                )}
+              </p>
+            )}
           </>
         ) : (
           <p className="text-xs text-amber-700">{backtest?.reason || 'The backtest is not available.'}</p>
@@ -218,6 +231,10 @@ export default function Demand() {
   const growthKnown = !!kpis.grossGrowth && kpis.grossGrowth !== 'n/a';
   const growthDown = growthKnown && String(kpis.grossGrowth).startsWith('-');
   const horizonDays = kpis.horizonDays || (demandMode === 'future' ? 60 : 30);
+  const chartData = (revenueTrajectory || []).map((p) => ({
+    ...p,
+    band: p.forecastLow != null && p.forecastHigh != null ? [p.forecastLow, p.forecastHigh] : null,
+  }));
   const skuError = new Map(((accuracy?.backtest?.available && accuracy.backtest.perSku) || []).map((r) => [r.sku, r]));
 
   return (
@@ -298,6 +315,11 @@ export default function Demand() {
             </span>
             <span className="text-slate-500 font-medium">recent pace vs history · next {horizonDays} days</span>
           </div>
+          {kpis.projectedGrossLow != null && kpis.projectedGrossHigh != null && (
+            <p className="mt-2 text-[11px] font-medium text-slate-500 relative z-10">
+              Likely between ₱{kpis.projectedGrossLow.toLocaleString()} and ₱{kpis.projectedGrossHigh.toLocaleString()} (4 in 5 chance)
+            </p>
+          )}
         </div>
 
         {/* Net Projected Revenue */}
@@ -379,7 +401,7 @@ export default function Demand() {
         <div className="p-6">
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueTrajectory} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.8}/>
@@ -393,7 +415,15 @@ export default function Demand() {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#64748b' }} />
                 <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(val) => `₱${val}`} />
-                <Tooltip formatter={(value, name) => [`₱${Number(value).toLocaleString()}`, name]} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    Array.isArray(value)
+                      ? `₱${Number(value[0]).toLocaleString()} – ₱${Number(value[1]).toLocaleString()}`
+                      : `₱${Number(value).toLocaleString()}`,
+                    name,
+                  ]}
+                />
+                <Area type="monotone" dataKey="band" stroke="none" fill="#10b981" fillOpacity={0.15} name="Likely range (80%)" />
                 <Area type="monotone" dataKey="actual" stroke="#4f46e5" fillOpacity={1} fill="url(#colorActual)" name="Actual Sales" />
                 <Area type="monotone" dataKey="forecast" stroke="#10b981" strokeDasharray="5 5" fillOpacity={1} fill="url(#colorForecast)" name="AI Forecast" />
               </AreaChart>
@@ -443,10 +473,25 @@ export default function Demand() {
                         limited data
                       </span>
                     )}
+                    {item.stockoutAdjusted && (
+                      <span
+                        className="ml-2 text-[10px] font-semibold text-sky-600"
+                        title={`Out of stock on ${item.stockoutDays} of the last ${meta.rateWindowDays || 28} days. Those days are left out so the empty shelf is not mistaken for low demand.`}
+                      >
+                        out of stock {item.stockoutDays}d
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3.5 text-center">{item.stock}</td>
                   <td className="px-4 py-3.5 text-center">{item.dailyDemand} / day</td>
-                  <td className="px-4 py-3.5 text-center">{item.forecast7Day}</td>
+                  <td className="px-4 py-3.5 text-center">
+                    {item.forecast7Day}
+                    {item.forecast7Low != null && item.forecast7High != null && (
+                      <span className="ml-1 text-[10px] font-medium text-slate-400" title="Likely range (4 in 5 chance)">
+                        ({item.forecast7Low}–{item.forecast7High})
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3.5 text-center">{item.forecastHorizon}</td>
                   <td
                     className="px-4 py-3.5 text-center text-slate-600"

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { summarize, gradeSnapshots } = require('../services/forecastAccuracy');
-const { buildForecast, dayNumber, isoFromDay } = require('../services/forecastEngine');
+const { buildForecast, dayNumber, isoFromDay, ENGINE_VERSION } = require('../services/forecastEngine');
 const { buildSnapshot } = require('../services/forecastSnapshots');
 
 const START = dayNumber('2026-08-01');
@@ -118,7 +118,7 @@ test('buildSnapshot stores revenue sums and only products that had history', () 
   const s = buildSnapshot(forecast);
   const future = forecast.revenueTrajectory.filter((p) => p.actual === null).map((p) => p.forecast);
   assert.equal(s.asOf, fixtureInput.asOf);
-  assert.equal(s.model, 'rate-mean@1.0.0');
+  assert.equal(s.model, `rate-mean@${ENGINE_VERSION}`);
   assert.equal(s.revenue7, Math.round(future.slice(0, 7).reduce((a, b) => a + b, 0) * 100) / 100);
   assert.equal(s.revenue30, Math.round(future.slice(0, 30).reduce((a, b) => a + b, 0) * 100) / 100);
   assert.equal(s.items.length, forecast.skuDemandList.filter((i) => i.dataDays > 0).length);

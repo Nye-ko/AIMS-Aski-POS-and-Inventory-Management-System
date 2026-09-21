@@ -170,6 +170,129 @@ class Revenue(unittest.TestCase):
         self.assertEqual(shares, {"X": 75.0, "Y": 25.0})
 
 
+class StockOuts(unittest.TestCase):
+    def out_days(self, sku, offsets):
+        return [{"sku": sku, "date": (AS_OF - timedelta(days=k)).isoformat()} for k in offsets]
+
+    def sales_with_gaps(self, gaps):
+        """4 units a day for 28 days, except no sales at all on the `gaps` (days back from asOf)."""
+        return [s for s in daily("A", 28, 4, 10.0) if s["date"] not in {(AS_OF - timedelta(days=k)).isoformat() for k in gaps}]
+
+    def test_days_out_of_stock_are_not_counted_as_zero_demand(self):
+        gaps = [2, 3, 9, 10, 16, 17]
+        sales = self.sales_with_gaps(gaps)
+        ignoring = run([product("A")], sales)
+        aware = run([product("A")], sales, stockouts=self.out_days("A", gaps))
+        self.assertAlmostEqual(item(ignoring, "A")["dailyDemand"], round(4 * 22 / 28, 2))
+        self.assertEqual(item(aware, "A")["dailyDemand"], 4.0)
+        self.assertEqual(item(aware, "A")["stockoutDays"], 6)
+        self.assertTrue(item(aware, "A")["stockoutAdjusted"])
+        self.assertEqual(item(aware, "A")["dataDays"], 22)
+
+    def test_confidence_counts_only_days_with_stock(self):
+        gaps = list(range(1, 16))      # out of stock for 15 of 28 days: 13 usable days
+        aware = run([product("A")], self.sales_with_gaps(gaps), stockouts=self.out_days("A", gaps))
+        self.assertEqual(item(aware, "A")["dataDays"], 13)
+        self.assertEqual(item(aware, "A")["confidence"], "low")
+
+    def test_nearly_always_sold_out_is_not_excluded(self):
+        gaps = list(range(1, 25))      # 4 usable days left: too few, so nothing is excluded
+        sales = self.sales_with_gaps(gaps)
+        aware = run([product("A")], sales, stockouts=self.out_days("A", gaps))
+        self.assertEqual(item(aware, "A")["stockoutDays"], 0)
+        self.assertFalse(item(aware, "A")["stockoutAdjusted"])
+        self.assertEqual(item(aware, "A")["dailyDemand"], item(run([product("A")], sales), "A")["dailyDemand"])
+
+    def test_stockouts_outside_the_window_or_for_unknown_products_are_ignored(self):
+        sales = daily("A", 28, 4, 10.0)
+        stray = self.out_days("A", [0, -1, 400]) + self.out_days("GHOST", [1, 2])
+        self.assertEqual(run([product("A")], sales, stockouts=stray), run([product("A")], sales))
+
+    def test_only_the_stocked_out_product_is_adjusted(self):
+        sales = daily("A", 28, 4, 10.0) + daily("B", 28, 2, 10.0)
+        r = run([product("A"), product("B", id=2)], sales, stockouts=self.out_days("A", [1, 2, 3]))
+        self.assertEqual(item(r, "B")["stockoutDays"], 0)
+        self.assertFalse(item(r, "B")["stockoutAdjusted"])
+
+
+class Ranges(unittest.TestCase):
+    def setUp(self):
+        rng = random.Random(4)
+        self.sales = []
+        for i in range(40):
+            self.sales.append({"sku": "A", "date": (AS_OF - timedelta(days=1 + i)).isoformat(),
+                               "quantity": rng.randint(0, 9), "revenue": 0})
+        for s in self.sales:
+            s["revenue"] = s["quantity"] * 25.0
+        self.result = run([product("A")], self.sales)
+
+    def test_forecast_sits_inside_its_range(self):
+        a = item(self.result, "A")
+        self.assertLessEqual(a["forecast7Low"], a["forecast7Day"])
+        self.assertLessEqual(a["forecast7Day"], a["forecast7High"])
+        self.assertGreaterEqual(a["forecast7Low"], 0)
+        k = self.result["kpis"]
+        self.assertLessEqual(k["projectedGrossLow"], k["projectedGross"])
+        self.assertLessEqual(k["projectedGross"], k["projectedGrossHigh"])
+
+    def test_steadier_sales_give_a_narrower_range(self):
+        steady = item(run([product("A")], daily("A", 40, 5, 25.0)), "A")
+        noisy = item(self.result, "A")
+        self.assertLess(steady["forecast7High"] - steady["forecast7Low"], noisy["forecast7High"] - noisy["forecast7Low"])
+
+    def test_unit_range_is_never_tighter_than_poisson(self):
+        # a product selling exactly 5 a day still cannot be forecast to the unit: counts are noisy
+        a = item(run([product("A")], daily("A", 40, 5, 25.0)), "A")
+        self.assertGreater(a["forecast7High"], a["forecast7Day"])
+
+    def test_range_grows_with_the_horizon_and_with_little_history(self):
+        long = run([product("A")], self.sales, days=60)["kpis"]
+        short = run([product("A")], self.sales, days=7)["kpis"]
+        self.assertGreater(long["projectedGrossHigh"] - long["projectedGrossLow"],
+                           short["projectedGrossHigh"] - short["projectedGrossLow"])
+        few = item(run([product("A")], self.sales[:8]), "A")
+        many = item(self.result, "A")
+        self.assertGreater((few["forecast7High"] - few["forecast7Low"]) / max(few["forecast7Day"], 1),
+                           (many["forecast7High"] - many["forecast7Low"]) / max(many["forecast7Day"], 1))
+
+    def test_trajectory_carries_a_band_that_joins_the_actuals(self):
+        traj = self.result["revenueTrajectory"]
+        joint = next(p for p in reversed(traj) if p["actual"] is not None)
+        self.assertEqual((joint["forecastLow"], joint["forecastHigh"]), (joint["actual"], joint["actual"]))
+        future = [p for p in traj if p["actual"] is None]
+        self.assertTrue(all(p["forecastLow"] <= p["forecast"] <= p["forecastHigh"] for p in future))
+
+
+class RevenueLevel(unittest.TestCase):
+    def rising(self):
+        # 28 days ending yesterday: 100/day for the older 14 days, 200/day for the newer 14
+        sales = []
+        for i in range(28):
+            sales.append({"sku": "A", "date": (AS_OF - timedelta(days=1 + i)).isoformat(),
+                          "quantity": 1, "revenue": 200.0 if i < 14 else 100.0})
+        return sales
+
+    def test_revenue_follows_the_last_14_days(self):
+        r = run([product("A")], self.rising(), days=10)
+        self.assertEqual(r["kpis"]["projectedGross"], 2000.0)
+        self.assertEqual(r["meta"]["revenueWindowDays"], 14)
+
+    def test_previous_version_used_28_days_and_is_still_reproducible(self):
+        sales = self.rising()
+        payload = {"asOf": AS_OF.isoformat(), "daysToForecast": 10, "products": [product("A")],
+                   "sales": sales, "dailyTotals": totals(sales)}
+        old = build_forecast(payload, legacy=True)
+        self.assertEqual(old["kpis"]["projectedGross"], 1500.0)
+        self.assertEqual(old["meta"]["engineVersion"], "1.0.0")
+
+    def test_units_still_use_28_days(self):
+        sales = []
+        for i in range(28):
+            sales.append({"sku": "A", "date": (AS_OF - timedelta(days=1 + i)).isoformat(),
+                          "quantity": 4 if i < 14 else 2, "revenue": 10.0})
+        self.assertEqual(item(run([product("A")], sales), "A")["dailyDemand"], 3.0)
+
+
 class Determinism(unittest.TestCase):
     def test_same_input_same_output(self):
         payload = load("forecast_input.json")

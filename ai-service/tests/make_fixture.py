@@ -53,6 +53,14 @@ def build_input():
     sales.append({"sku": "STEADY-1", "date": AS_OF.isoformat(), "quantity": 99, "revenue": 4950.0})
     sales.append({"sku": "GHOST", "date": (AS_OF - timedelta(days=3)).isoformat(), "quantity": 5, "revenue": 50.0})
     totals = [t for t in totals if t["date"] < AS_OF.isoformat()]
+
+    # Out-of-stock days. STEADY-1 was out for four days (skipped when learning its rate). SPARSE-1 was out
+    # for 24 of its last 28 days, too few left to learn from, so it must be ignored. A day outside the
+    # window and an unknown product are ignored too.
+    stockouts = [{"sku": "STEADY-1", "date": (AS_OF - timedelta(days=k)).isoformat()} for k in (3, 4, 10, 11)]
+    stockouts += [{"sku": "SPARSE-1", "date": (AS_OF - timedelta(days=k)).isoformat()} for k in range(1, 25)]
+    stockouts.append({"sku": "STEADY-1", "date": AS_OF.isoformat()})
+    stockouts.append({"sku": "GHOST", "date": (AS_OF - timedelta(days=2)).isoformat()})
     return {
         "asOf": AS_OF.isoformat(),
         "timezone": "Asia/Manila",
@@ -61,6 +69,7 @@ def build_input():
         "products": PRODUCTS,
         "sales": sales,
         "dailyTotals": totals,
+        "stockouts": stockouts,
     }
 
 
