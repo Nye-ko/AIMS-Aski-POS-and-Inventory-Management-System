@@ -535,7 +535,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
   return (
     <div className="space-y-6">
       <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5 space-y-4">
-        {/* Row 1: utility actions — uniform neutral toolbar buttons, primary action last */}
+        {/* Row 1: utility actions — uniform neutral toolbar buttons (they wrap as a group) */}
         <div className="relative z-10 flex flex-wrap items-center gap-2">
           <ToolbarButton icon={FileSpreadsheet} iconColor="text-emerald-600" label="Export Inventory Sheet" onClick={handleExportInventorySheet} />
           {canWrite && (
@@ -555,21 +555,6 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
             </>
           )}
-
-          {canWrite && <button
-            onClick={() => {
-              setIsFormOpen(!isFormOpen);
-              setIsAddStockOpen(false);
-            }}
-            className={`ml-auto flex items-center justify-center gap-2 px-4 py-2 font-bold text-xs rounded-full transition-all cursor-pointer ${
-              isFormOpen
-                ? 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
-                : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
-            }`}
-          >
-            {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
-          </button>}
         </div>
 
         <div className="relative z-10 border-t border-slate-100" />
@@ -577,7 +562,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
         {/* Row 2: search + category filter — z-20 so its dropdown (which
             visually overflows into the card below) always wins the stacking
             tie against the Product List card's own z-10 header/table rows */}
-        <div className="relative z-20 flex flex-col sm:flex-row gap-2">
+        <div className="relative z-20 flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="relative w-full sm:max-w-sm">
             <Search className="w-4 h-4 text-blue-500 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
@@ -638,6 +623,21 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               </div>
             )}
           </div>
+
+          {canWrite && <button
+            onClick={() => {
+              setIsFormOpen(!isFormOpen);
+              setIsAddStockOpen(false);
+            }}
+            className={`sm:ml-auto flex shrink-0 items-center justify-center gap-2 px-4 py-2 font-bold text-xs rounded-full transition-all cursor-pointer ${
+              isFormOpen
+                ? 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
+                : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
+            }`}
+          >
+            {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
+          </button>}
         </div>
       </div>
 
