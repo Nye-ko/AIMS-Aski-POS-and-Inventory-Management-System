@@ -1,4 +1,5 @@
 const { prisma } = require('./Product');
+const { cleanSupplierName, findSupplierByName } = require('../services/supplierName');
 
 const VAT_RATE = 0.12;
 const TAGGING_OPTIONS = ['Regular', 'Urgent', 'Rush', 'Special Order'];
@@ -36,11 +37,20 @@ const orderInclude = {
 
 // Validates the client payload and recomputes every money figure server-side in integer
 // centavos: net = (line subtotals + 12% VAT) - discount.
-const normalizeOrderInput = async ({ supplierId, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging }) => {
+// The supplier is either an existing one (`supplierId`) or a name typed on the form (`supplierName`), which
+// is matched to an existing supplier or created when the order is saved (see resolveSupplierId).
+const normalizeOrderInput = async ({ supplierId, supplierName, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging }) => {
+  let supplierRef;
   const validSupplierId = parseInt(supplierId, 10);
-  if (!validSupplierId) throw new PurchasingError(400, 'supplierId is required');
-  const supplier = await prisma.supplier.findUnique({ where: { id: validSupplierId }, select: { id: true } });
-  if (!supplier) throw new PurchasingError(400, 'Supplier not found');
+  if (validSupplierId) {
+    const supplier = await prisma.supplier.findUnique({ where: { id: validSupplierId }, select: { id: true } });
+    if (!supplier) throw new PurchasingError(400, 'Supplier not found');
+    supplierRef = { id: validSupplierId };
+  } else {
+    const name = cleanSupplierName(supplierName);
+    if (!name) throw new PurchasingError(400, 'A supplier is required');
+    supplierRef = { name };
+  }
 
   if (!Array.isArray(items) || items.length === 0) throw new PurchasingError(400, 'At least one item is required');
 
@@ -72,8 +82,8 @@ const normalizeOrderInput = async ({ supplierId, items, terms, remarks, discount
   if (!TAGGING_OPTIONS.includes(taggingValue)) throw new PurchasingError(400, 'Invalid tagging');
 
   return {
+    supplierRef,
     header: {
-      supplierId: validSupplierId,
       terms: cleanText(terms, 100) || 'N/A',
       remarks: cleanText(remarks, 1000),
       shipTo: cleanText(shipTo, 255),
@@ -92,6 +102,15 @@ const normalizeOrderInput = async ({ supplierId, items, terms, remarks, discount
   };
 };
 
+// Inside the order's transaction, so a failed order never leaves a stray new supplier behind.
+const resolveSupplierId = async (tx, supplierRef) => {
+  if (supplierRef.id) return supplierRef.id;
+  const existing = findSupplierByName(await tx.supplier.findMany({ select: { id: true, name: true } }), supplierRef.name);
+  if (existing) return existing.id;
+  const created = await tx.supplier.create({ data: { name: supplierRef.name }, select: { id: true } });
+  return created.id;
+};
+
 const describeStatus = (status) =>
   ({ DRAFT: 'still a draft', PENDING: 'pending', RECEIVED: 'already received', CANCELLED: 'cancelled' })[status] || status;
 
@@ -99,7 +118,7 @@ const PurchaseOrderModel = {
   // Create a Purchase Order as either a DRAFT (editable, not receivable) or PENDING (submitted).
   create: async ({ status = 'PENDING', preparedBy, createdById, ...input }) => {
     if (!['DRAFT', 'PENDING'].includes(status)) throw new PurchasingError(400, 'Invalid status');
-    const { header, lineItems } = await normalizeOrderInput(input);
+    const { header, supplierRef, lineItems } = await normalizeOrderInput(input);
 
     // createdById is set by the route handler from the authenticated user's
     // JWT — verify it still resolves to a real user.
@@ -108,10 +127,12 @@ const PurchaseOrderModel = {
     if (!userExists) throw new Error('Authenticated user no longer exists.');
 
     return prisma.$transaction(async (tx) => {
+      const supplierId = await resolveSupplierId(tx, supplierRef);
       // Create with a placeholder number first so we can stamp the final one using the generated id
       const created = await tx.purchaseOrder.create({
         data: {
           ...header,
+          supplierId,
           poNumber: `TEMP-${Date.now()}-${validCreatedById}`,
           status,
           preparedBy: cleanText(preparedBy, 100),
@@ -131,10 +152,11 @@ const PurchaseOrderModel = {
   // Replace the header and items of a DRAFT. Submitted orders are immutable.
   updateDraft: async (id, input) => {
     const poId = parseInt(id, 10);
-    const { header, lineItems } = await normalizeOrderInput(input);
+    const { header, supplierRef, lineItems } = await normalizeOrderInput(input);
 
     return prisma.$transaction(async (tx) => {
-      const { count } = await tx.purchaseOrder.updateMany({ where: { id: poId, status: 'DRAFT' }, data: header });
+      const supplierId = await resolveSupplierId(tx, supplierRef);
+      const { count } = await tx.purchaseOrder.updateMany({ where: { id: poId, status: 'DRAFT' }, data: { ...header, supplierId } });
       if (count === 0) {
         const existing = await tx.purchaseOrder.findUnique({ where: { id: poId }, select: { status: true } });
         if (!existing) throw new PurchasingError(404, 'Purchase order not found');

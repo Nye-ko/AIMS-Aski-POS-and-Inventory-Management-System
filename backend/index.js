@@ -400,9 +400,10 @@ const sendPurchasingError = (res, error, action) => {
 // Create a Purchase Order (DRAFT or PENDING) for one supplier
 app.post('/api/purchase-orders', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { supplierId, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging, status } = req.body;
+    const { supplierId, supplierName, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging, status } = req.body;
     const purchaseOrder = await PurchaseOrderModel.create({
       supplierId,
+      supplierName,
       items,
       terms,
       remarks,
@@ -479,9 +480,10 @@ app.get('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVE
 // Edit a DRAFT purchase order (header and items are replaced)
 app.put('/api/purchase-orders/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { supplierId, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging } = req.body;
+    const { supplierId, supplierName, items, terms, remarks, discount, shipTo, shippingAddress, purpose, tagging } = req.body;
     const purchaseOrder = await PurchaseOrderModel.updateDraft(req.params.id, {
       supplierId,
+      supplierName,
       items,
       terms,
       remarks,

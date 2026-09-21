@@ -13,6 +13,7 @@ import {
   Download,
 } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
+import SupplierCombobox from './SupplierCombobox';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const VAT_RATE = 0.12;
@@ -73,7 +74,8 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
 
   const [poNumber, setPoNumber] = useState('Auto-generated on save');
   const [poDate, setPoDate] = useState(emptyHeader.poDate);
-  const [supplierId, setSupplierId] = useState(emptyHeader.supplierId);
+  const [supplierId, setSupplierId] = useState(emptyHeader.supplierId); // '' while the typed name matches no supplier
+  const [supplierText, setSupplierText] = useState('');
   const [supplierRecords, setSupplierRecords] = useState([]);
   const [shipTo, setShipTo] = useState(emptyHeader.shipTo);
   const [shippingAddress, setShippingAddress] = useState(emptyHeader.shippingAddress);
@@ -100,6 +102,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
     setPoNumber('Auto-generated on save');
     setPoDate(emptyHeader.poDate());
     setSupplierId(emptyHeader.supplierId);
+    setSupplierText('');
     setShipTo(emptyHeader.shipTo);
     setShippingAddress(emptyHeader.shippingAddress);
     setTagging(emptyHeader.tagging);
@@ -123,6 +126,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
       setPoNumber(purchaseOrder.poNumber);
       setPoDate(new Date(purchaseOrder.createdAt).toISOString().slice(0, 10));
       setSupplierId(String(purchaseOrder.supplierId));
+      setSupplierText(purchaseOrder.supplier?.name || '');
       setShipTo(purchaseOrder.shipTo || '');
       setShippingAddress(purchaseOrder.shippingAddress || '');
       setTagging(purchaseOrder.tagging || emptyHeader.tagging);
@@ -162,15 +166,18 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
     supplierRecords.find((s) => String(s.id) === String(supplierId)) ||
     (purchaseOrder && String(purchaseOrder.supplierId) === String(supplierId) ? purchaseOrder.supplier : null);
 
+  // Every supplier on file (so a supplier created from an earlier PO shows up even before it has products),
+  // plus any known only through the product list.
   const suppliers = useMemo(() => {
     const map = new Map();
+    supplierRecords.forEach((s) => map.set(s.id, { id: s.id, name: s.name || 'N/A' }));
     products.forEach((p) => {
       if (p.supplierId && !map.has(p.supplierId)) {
         map.set(p.supplierId, { id: p.supplierId, name: p.supplierName || 'N/A' });
       }
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [products]);
+  }, [products, supplierRecords]);
 
   const barcodeMap = useMemo(() => {
     const map = new Map();
@@ -289,8 +296,9 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
     }
   };
 
+  // An existing supplier goes by id; a name that matched nobody is sent as supplierName and created on save.
   const buildPayload = (status) => ({
-    supplierId: Number(supplierId),
+    ...(supplierId ? { supplierId: Number(supplierId) } : { supplierName: supplierText.trim() }),
     items: lineItems.map((li) => ({
       productId: li.productId,
       quantity: Number(li.qty),
@@ -326,7 +334,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
   };
 
   const validateForm = () => {
-    if (!supplierId) return 'Select a supplier for this purchase order.';
+    if (!supplierId && !supplierText.trim()) return 'Select or type a supplier for this purchase order.';
     if (lineItems.length === 0) return 'Add at least one item to the purchase order.';
     return null;
   };
@@ -443,24 +451,28 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
               </div>
               <div>
                 <label className={fieldLabelClass}>Supplier</label>
-                <select disabled={isViewMode} value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={darkFieldClass}>
-                  <option value="">Select supplier...</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                <SupplierCombobox
+                  disabled={isViewMode}
+                  value={{ id: supplierId, text: supplierText }}
+                  options={suppliers}
+                  onChange={({ id, text }) => {
+                    setSupplierId(id);
+                    setSupplierText(text);
+                  }}
+                  inputClassName={darkFieldClass}
+                />
               </div>
               <div>
                 <label className={fieldLabelClass}>Address</label>
-                <input type="text" disabled value={selectedSupplier?.address || ''} placeholder="From the supplier record" className={darkFieldClass} />
+                <input type="text" disabled value={selectedSupplier?.address || ''} placeholder={supplierText.trim() && !supplierId ? 'New supplier: not set yet' : 'From the supplier record'} className={darkFieldClass} />
               </div>
               <div>
                 <label className={fieldLabelClass}>Contact Person</label>
-                <input type="text" disabled value={selectedSupplier?.contactPerson || ''} placeholder="From the supplier record" className={darkFieldClass} />
+                <input type="text" disabled value={selectedSupplier?.contactPerson || ''} placeholder={supplierText.trim() && !supplierId ? 'New supplier: not set yet' : 'From the supplier record'} className={darkFieldClass} />
               </div>
               <div>
                 <label className={fieldLabelClass}>Contact No.</label>
-                <input type="text" disabled value={selectedSupplier?.phone || ''} placeholder="From the supplier record" className={darkFieldClass} />
+                <input type="text" disabled value={selectedSupplier?.phone || ''} placeholder={supplierText.trim() && !supplierId ? 'New supplier: not set yet' : 'From the supplier record'} className={darkFieldClass} />
               </div>
             </div>
 
