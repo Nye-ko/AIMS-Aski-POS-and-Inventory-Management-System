@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
-import { X, ClipboardCheck, Loader2, Inbox, ChevronLeft } from 'lucide-react';
+import { X, ClipboardCheck, Loader2, Inbox, ChevronLeft, Plus, Trash2 } from 'lucide-react';
 
 import { apiFetch } from '../../auth/apiFetch';
+import ProductCombobox from './ProductCombobox';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -44,11 +45,38 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
 
   const [selectedPo, setSelectedPo] = useState(null);
   const [items, setItems] = useState([]);
+  const [extraItems, setExtraItems] = useState([]);
+  const [products, setProducts] = useState([]);
   const [deliveryNote, setDeliveryNote] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const nextExtraKey = useRef(1);
+
+  const loadProducts = async () => {
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/products`);
+      if (res.ok) setProducts(await res.json());
+    } catch {
+      // Non-fatal: the extra-items combobox just falls back to "type a brand-new product" for everything.
+    }
+  };
+
+  const addExtraItem = () => {
+    setExtraItems((prev) => [
+      ...prev,
+      { key: nextExtraKey.current++, combo: { id: '', text: '' }, quantity: 1, unitCost: 0, price: '' },
+    ]);
+  };
+
+  const updateExtraItem = (key, patch) => {
+    setExtraItems((prev) => prev.map((it) => (it.key !== key ? it : { ...it, ...patch })));
+  };
+
+  const removeExtraItem = (key) => {
+    setExtraItems((prev) => prev.filter((it) => it.key !== key));
+  };
 
   const loadPendingOrders = async () => {
     setIsLoadingList(true);
@@ -67,6 +95,7 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
   const openPurchaseOrder = (po) => {
     setSelectedPo(po);
     setItems(buildLineItems(po));
+    setExtraItems([]);
     setDeliveryNote('');
     setInvoiceNo('');
     setRemarks('');
@@ -79,9 +108,11 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
   const prevIsOpen = React.useRef(isOpen);
   useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
+      loadProducts();
       if (initialPurchaseOrder) {
         setSelectedPo(initialPurchaseOrder);
         setItems(buildLineItems(initialPurchaseOrder));
+        setExtraItems([]);
         setDeliveryNote('');
         setInvoiceNo('');
         setRemarks('');
@@ -108,7 +139,20 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
       .filter((it) => it.checked && it.quantity > 0)
       .map((it) => ({ productId: it.productId, quantity: Number(it.quantity), unitCost: Number(it.unitCost) }));
 
-    if (eligibleItems.length === 0) {
+    const filledExtras = extraItems.filter((it) => it.combo.text.trim() && it.quantity > 0);
+    for (const it of filledExtras) {
+      if (!it.combo.id && !(Number(it.price) > 0)) {
+        setFormError(`"${it.combo.text.trim()}" is a new product — give it a selling price.`);
+        return;
+      }
+    }
+    const extraLineItems = filledExtras.map((it) =>
+      it.combo.id
+        ? { productId: Number(it.combo.id), quantity: Number(it.quantity), unitCost: Number(it.unitCost) }
+        : { newProduct: { name: it.combo.text.trim(), price: Number(it.price) }, quantity: Number(it.quantity), unitCost: Number(it.unitCost) },
+    );
+
+    if (eligibleItems.length === 0 && extraLineItems.length === 0) {
       setFormError('Select at least one received product to include in the report.');
       return;
     }
@@ -120,7 +164,7 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           purchaseOrderId: selectedPo.id,
-          items: eligibleItems,
+          items: [...eligibleItems, ...extraLineItems],
           deliveryNote,
           invoiceNo,
           remarks,
@@ -309,6 +353,88 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
                   ))}
                 </tbody>
               </table>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-600">
+                    Extra items received (not on this PO)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addExtraItem}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 font-bold text-[11px] rounded-lg hover:bg-slate-50 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add item
+                  </button>
+                </div>
+
+                {extraItems.length > 0 && (
+                  <table className="w-full text-left text-xs border border-slate-200 rounded-2xl overflow-hidden">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-100">
+                      <tr>
+                        <th className="p-2">Product</th>
+                        <th className="p-2 text-center w-20">Qty</th>
+                        <th className="p-2 text-center w-24">Unit Cost</th>
+                        <th className="p-2 text-center w-24">Selling Price</th>
+                        <th className="p-2 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {extraItems.map((it) => (
+                        <tr key={it.key}>
+                          <td className="p-2">
+                            <ProductCombobox
+                              value={it.combo}
+                              options={products}
+                              onChange={(combo) => updateExtraItem(it.key, { combo })}
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={it.quantity}
+                              onChange={(e) => updateExtraItem(it.key, { quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-center text-xs"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={it.unitCost}
+                              onChange={(e) => updateExtraItem(it.key, { unitCost: parseFloat(e.target.value) || 0 })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-center text-xs"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              disabled={!!it.combo.id}
+                              placeholder={it.combo.id ? '—' : 'Required'}
+                              value={it.price}
+                              onChange={(e) => updateExtraItem(it.key, { price: e.target.value })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-center text-xs disabled:opacity-40"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <button
+                              type="button"
+                              onClick={() => removeExtraItem(it.key)}
+                              className="text-slate-400 hover:text-rose-600 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </>
           )}
         </div>

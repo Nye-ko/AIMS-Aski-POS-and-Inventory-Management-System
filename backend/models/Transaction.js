@@ -2,6 +2,7 @@
 const { ProductModel, prisma } = require('./Product');
 const { verifyApproval, consumeApproval } = require('../services/posApproval');
 const { recordMovement } = require('./stockLedger');
+const { STORE_TIMEZONE, localDate } = require('./DemandForecast');
 
 class CheckoutError extends Error {
   constructor(status, message, code = 'CHECKOUT_REJECTED') {
@@ -33,6 +34,51 @@ const TransactionModel = {
       orderBy: { createdAt: 'desc' },
       ...(limit ? { take: limit } : {}),
     });
+  },
+
+  // One row per transaction for a given store-local calendar month (default: the current month),
+  // for the Sales Report page. Transactions are fetched over a coarse UTC window (a day of slack on
+  // each side) and filtered precisely with localDate, the same pattern loadForecastInput uses.
+  findForReport: async ({ month } = {}) => {
+    const targetMonth = /^\d{4}-\d{2}$/.test(month) ? month : localDate(new Date(), STORE_TIMEZONE).slice(0, 7);
+    const [year, mon] = targetMonth.split('-').map(Number);
+    const from = new Date(Date.UTC(year, mon - 1, 1) - 86400000);
+    const to = new Date(Date.UTC(year, mon, 1) + 86400000);
+
+    const transactions = await prisma.transaction.findMany({
+      where: { createdAt: { gte: from, lt: to } },
+      include: {
+        items: { select: { quantity: true } },
+        cashier: { select: { username: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const rows = transactions
+      .filter((t) => localDate(t.createdAt, STORE_TIMEZONE).slice(0, 7) === targetMonth)
+      .map((t) => ({
+        id: t.id,
+        transactionNo: t.transactionNo,
+        createdAt: t.createdAt,
+        itemsCount: t.items.length,
+        subtotal: t.subtotal,
+        discountAmount: t.discountAmount,
+        totalAmount: t.totalAmount,
+        paymentMethod: t.paymentMethod,
+        cashier: t.cashier?.username || null,
+      }));
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        count: acc.count + 1,
+        subtotal: acc.subtotal + Number(r.subtotal),
+        discountAmount: acc.discountAmount + Number(r.discountAmount),
+        totalAmount: acc.totalAmount + Number(r.totalAmount),
+      }),
+      { count: 0, subtotal: 0, discountAmount: 0, totalAmount: 0 },
+    );
+
+    return { month: targetMonth, rows, totals };
   },
 
   // Process checkout, update stock, and emit real-time socket event.

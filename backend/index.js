@@ -339,6 +339,18 @@ app.get('/api/products/:id/movements', authenticateToken, requireRole(...ROLES.I
   }
 });
 
+// 3f. That product's whole ledger (unpaginated), for the Stock History modal's Export button
+app.get('/api/products/:id/movements/export', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!productId) return res.status(400).json({ error: 'Invalid product id' });
+    res.json(await StockMovementModel.findAllForExport({ ...req.query, productId }));
+  } catch (error) {
+    console.error('Error exporting product movements:', error);
+    res.status(500).json({ error: 'Failed to export product movements' });
+  }
+});
+
 // 4. Search Product by Barcode or 6-digit Code
 app.get('/api/products/barcode/:code', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP), async (req, res) => {
   try {
@@ -569,7 +581,7 @@ app.get('/api/receiving-reports/:id/export', authenticateToken, requireRole(...R
 // All Receiving Reports, for the "Create Purchase Return" picker
 app.get('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const receivingReports = await ReceivingReportModel.findAll();
+    const receivingReports = await ReceivingReportModel.findAll({ supplierId: req.query.supplierId });
     res.json(receivingReports);
   } catch (error) {
     console.error('Error fetching receiving reports:', error);
@@ -593,12 +605,13 @@ app.get('/api/receiving-reports/:id', authenticateToken, requireRole(...ROLES.IN
 
 // --- PURCHASE RETURN ROUTES ---
 
-// File a Purchase Return against a Receiving Report (decrements product stock)
+// File a Purchase Return against a supplier — each item names which Receiving Report (delivery
+// batch) it's drawn from, so one return can span several of that supplier's deliveries.
 app.post('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { receivingReportId, items, reason, remarks } = req.body;
+    const { supplierId, items, reason, remarks } = req.body;
     const purchaseReturn = await PurchaseReturnModel.create({
-      receivingReportId,
+      supplierId,
       items,
       reason,
       remarks,
@@ -739,6 +752,17 @@ app.get('/api/transactions', authenticateToken, requireRole(...ROLES.FINANCE), a
   } catch (error) {
     console.error('Error fetching transactions:', error);
     res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// One row per transaction for a given month (?month=YYYY-MM, defaults to the current store-local month),
+// for the Sales Report page.
+app.get('/api/sales-report', authenticateToken, requireRole(...ROLES.FINANCE), async (req, res) => {
+  try {
+    res.json(await TransactionModel.findForReport({ month: req.query.month }));
+  } catch (error) {
+    console.error('Error building sales report:', error);
+    res.status(500).json({ error: 'Failed to build sales report' });
   }
 });
 
