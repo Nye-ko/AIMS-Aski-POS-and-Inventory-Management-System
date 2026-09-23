@@ -60,12 +60,14 @@ const buildViewLineItems = (po) =>
   }));
 
 const fieldLabelClass = 'block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1';
-// Header details grid: dark/slate fields per the legacy PO Processing Module look.
+// Every field in the form (header details and quick-add row alike) uses the same white/gray styling.
 const darkFieldClass =
-  'w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2 text-xs font-medium placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark] disabled:opacity-50 disabled:cursor-not-allowed';
-// Quick-add row / summary strip: light fields for contrast against the dark header block.
+  'w-full bg-white border border-slate-200 text-slate-800 rounded-xl px-3.5 py-2 text-xs font-medium placeholder-slate-400 focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-slate-50';
 const lightFieldClass =
-  'w-full bg-white border border-slate-200 text-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-medium placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all';
+  'w-full bg-white border border-slate-200 text-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-medium placeholder-slate-400 focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition-all';
+// Primary action (the one positive next step in a panel): solid dark-gray, no gradients/color.
+const primaryButtonClass =
+  'bg-slate-800 hover:bg-slate-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed';
 
 // mode: 'create' (new PO), 'edit' (a saved DRAFT), or 'view' (read-only, any other status)
 export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mode = 'create', purchaseOrder = null, onSaved }) {
@@ -401,20 +403,20 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
       <div className="font-sans bg-white rounded-2xl shadow-2xl shadow-slate-900/20 max-w-6xl w-full border border-slate-200/80 max-h-[92vh] flex flex-col animate-modal-card overflow-hidden">
-        {/* Dark navy header accent */}
-        <div className="flex items-center justify-between px-6 py-4 bg-[#0B132B] border-b border-slate-800 shrink-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+            <div className="p-2.5 rounded-2xl bg-slate-200 text-slate-700">
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-400">PO Processing</p>
-              <h3 className="text-lg font-black text-white tracking-tight">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">PO Processing</p>
+              <h3 className="text-lg font-black text-slate-800 tracking-tight">
                 {isViewMode ? `Purchase Order — ${purchaseOrder?.poNumber || ''}` : isEditMode ? `Edit Draft — ${purchaseOrder?.poNumber || ''}` : 'Create Purchase Order'}
               </h3>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors cursor-pointer">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 hover:bg-slate-200 p-2 rounded-full transition-colors cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -609,7 +611,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
                 <button
                   type="button"
                   onClick={handleAddOrUpdateItem}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-tr from-blue-600 to-emerald-600 hover:shadow-lg hover:shadow-blue-500/30 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
+                  className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition cursor-pointer ${primaryButtonClass}`}
                 >
                   {editingItemId ? <Save className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
                   {editingItemId ? 'Update Item' : 'Add'}
@@ -713,7 +715,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
                   type="button"
                   onClick={handleDownload}
                   disabled={isDownloading}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-tr from-emerald-600 to-teal-600 hover:shadow-lg hover:shadow-emerald-500/30 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition cursor-pointer ${primaryButtonClass}`}
                 >
                   {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                   {isDownloading ? 'Downloading...' : 'Download PO (.xlsx)'}
@@ -751,7 +753,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
                     type="button"
                     onClick={handleSaveDraft}
                     disabled={isSavingDraft || isSubmitting}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 hover:shadow-lg hover:shadow-blue-500/30 text-white font-bold text-[11px] uppercase tracking-wide rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold text-[11px] uppercase tracking-wide rounded-xl hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isSavingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     {isSavingDraft ? 'Saving...' : 'Save Draft'}
@@ -770,7 +772,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
                     type="button"
                     onClick={handleSubmit}
                     disabled={isSubmitting || isSavingDraft}
-                    className="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-tr from-emerald-600 to-teal-600 hover:shadow-lg hover:shadow-emerald-500/30 text-white font-bold text-[11px] uppercase tracking-wide rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
+                    className={`flex items-center gap-1.5 px-5 py-2 font-bold text-[11px] uppercase tracking-wide rounded-xl transition cursor-pointer ${primaryButtonClass}`}
                   >
                     {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                     {isSubmitting ? 'Submitting...' : 'Submit'}

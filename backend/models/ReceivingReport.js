@@ -1,8 +1,12 @@
 const { prisma } = require('./Product');
 const { VAT_RATE, PurchasingError } = require('./PurchaseOrder');
 const { changeStock } = require('./stockLedger');
+const { createBatch } = require('./stockBatches');
 
 const MAX_UNIT_COST = 10000000;
+
+// Same fallback the "Add Product" form uses when a barcode isn't given.
+const generateBarcode = () => String(Math.floor(1000000000 + Math.random() * 9000000000));
 
 // RR-YYYYMMDD-#### — date-stamped, uniqueness guaranteed by the row's own id
 const generateRrNumber = (id, date) => {
@@ -23,17 +27,15 @@ const reportInclude = {
 // screen can cap what's left to send back across every earlier purchase return.
 const withReturnableQuantities = async (reports) => {
   if (reports.length === 0) return reports;
-  const returns = await prisma.purchaseReturn.findMany({
+  const returnedLines = await prisma.purchaseReturnItem.findMany({
     where: { receivingReportId: { in: reports.map((r) => r.id) } },
-    select: { receivingReportId: true, items: { select: { productId: true, quantity: true } } },
+    select: { receivingReportId: true, productId: true, quantity: true },
   });
 
   const returned = new Map();
-  for (const pr of returns) {
-    for (const it of pr.items) {
-      const key = `${pr.receivingReportId}:${it.productId}`;
-      returned.set(key, (returned.get(key) || 0) + it.quantity);
-    }
+  for (const line of returnedLines) {
+    const key = `${line.receivingReportId}:${line.productId}`;
+    returned.set(key, (returned.get(key) || 0) + line.quantity);
   }
 
   return reports.map((report) => ({
@@ -67,30 +69,46 @@ const ReceivingReportModel = {
     if (!userExists) throw new Error('Authenticated user no longer exists.');
 
     // A pending PO's lines never change (only drafts are editable), so they're safe to validate against here.
+    // A line is either `productId` (a product on the PO, or an "extra" one that isn't) or `newProduct`
+    // (a brand-new product, created when the report is filed). Only PO-matched lines are capped by
+    // what was ordered — extras and new products aren't, since they were never on the PO to begin with.
     const ordered = new Map(purchaseOrder.items.map((it) => [it.productId, it]));
     const seen = new Set();
-    const lineItems = items.map((item) => {
-      const productId = parseInt(item.productId, 10);
+    const parsedLines = items.map((item) => {
       const quantity = parseInt(item.quantity, 10);
       const unitCostCents = Math.round(Number(item.unitCost) * 100);
-      if (!productId || !(quantity > 0) || !Number.isFinite(unitCostCents) || unitCostCents < 0 || unitCostCents > MAX_UNIT_COST * 100) {
-        throw new PurchasingError(400, 'Each received item requires a valid productId, quantity, and unitCost');
+      if (!(quantity > 0) || !Number.isFinite(unitCostCents) || unitCostCents < 0 || unitCostCents > MAX_UNIT_COST * 100) {
+        throw new PurchasingError(400, 'Each received item requires a valid quantity and unitCost');
       }
+
+      if (item.newProduct) {
+        const name = typeof item.newProduct.name === 'string' ? item.newProduct.name.trim() : '';
+        const priceCents = Math.round(Number(item.newProduct.price) * 100);
+        if (!name) throw new PurchasingError(400, 'A new product needs a name');
+        if (!Number.isFinite(priceCents) || priceCents <= 0) throw new PurchasingError(400, `"${name}" needs a valid selling price`);
+        return { productId: null, newProductName: name, newProductPriceCents: priceCents, quantity, unitCostCents };
+      }
+
+      const productId = parseInt(item.productId, 10);
+      if (!productId) throw new PurchasingError(400, 'Each received item requires a valid productId, quantity, and unitCost');
       if (seen.has(productId)) throw new PurchasingError(400, 'A product can only appear once on a receiving report');
       seen.add(productId);
 
       const orderedItem = ordered.get(productId);
-      if (!orderedItem) throw new PurchasingError(400, `Product ${productId} is not on ${purchaseOrder.poNumber}`);
-      if (quantity > orderedItem.quantity) {
+      if (orderedItem && quantity > orderedItem.quantity) {
         throw new PurchasingError(400, `Cannot receive ${quantity} of product ${productId} — only ${orderedItem.quantity} were ordered on ${purchaseOrder.poNumber}`);
       }
-      return {
-        productId,
-        quantity,
-        unitCost: unitCostCents / 100,
-        subtotal: (quantity * unitCostCents) / 100,
-      };
+      return { productId, newProductName: null, quantity, unitCostCents };
     });
+
+    // Extra items (a productId not on the PO) must reference a product that still exists.
+    const extraIds = parsedLines.filter((l) => l.productId && !ordered.has(l.productId)).map((l) => l.productId);
+    if (extraIds.length) {
+      const found = await prisma.product.findMany({ where: { id: { in: extraIds } }, select: { id: true } });
+      if (found.length !== new Set(extraIds).size) {
+        throw new PurchasingError(400, 'One or more extra items reference a product that no longer exists');
+      }
+    }
 
     return prisma.$transaction(async (tx) => {
       // A filed Receiving Report always closes out its source PO (no partial/back-order tracking).
@@ -100,6 +118,32 @@ const ReceivingReportModel = {
         data: { status: 'RECEIVED' },
       });
       if (closed.count === 0) throw new PurchasingError(409, 'This purchase order is not pending receipt');
+
+      // Brand-new products are created first so every line has a real productId before the report is written.
+      // Category/unit/min stock are left at the schema defaults; the barcode falls back the same way the
+      // "Add Product" form does. The product is attached to this PO's supplier, since that's who delivered it.
+      const lineItems = [];
+      for (const line of parsedLines) {
+        let productId = line.productId;
+        if (line.newProductName) {
+          const newProduct = await tx.product.create({
+            data: {
+              name: line.newProductName,
+              price: line.newProductPriceCents / 100,
+              costPrice: line.unitCostCents / 100,
+              barcode: generateBarcode(),
+              supplierId: purchaseOrder.supplierId,
+            },
+          });
+          productId = newProduct.id;
+        }
+        lineItems.push({
+          productId,
+          quantity: line.quantity,
+          unitCost: line.unitCostCents / 100,
+          subtotal: (line.quantity * line.unitCostCents) / 100,
+        });
+      }
 
       const created = await tx.receivingReport.create({
         data: {
@@ -117,7 +161,8 @@ const ReceivingReportModel = {
 
       const rrNumber = generateRrNumber(created.id, created.receivedAt);
 
-      // Received goods land in stock (logged in the ledger) at their actual received cost
+      // Received goods land in stock (logged in the ledger) at their actual received cost, and
+      // open a new batch so that cost stays attributable even after later receipts change it.
       for (const item of lineItems) {
         await changeStock(tx, {
           productId: item.productId,
@@ -130,6 +175,16 @@ const ReceivingReportModel = {
           userId: validReceivedById,
         });
         await tx.product.update({ where: { id: item.productId }, data: { costPrice: item.unitCost } });
+        await createBatch(tx, {
+          productId: item.productId,
+          supplierId: purchaseOrder.supplierId,
+          unitCost: item.unitCost,
+          quantity: item.quantity,
+          referenceType: 'ReceivingReport',
+          referenceId: created.id,
+          referenceNo: rrNumber,
+          receivedAt: created.receivedAt,
+        });
       }
 
       return tx.receivingReport.update({
@@ -150,9 +205,14 @@ const ReceivingReportModel = {
     return withQuantities;
   },
 
-  // All Receiving Reports, for the "Create Purchase Return" picker
-  findAll: async () => {
+  // All Receiving Reports, optionally scoped to one supplier — for the "Create Purchase
+  // Return" picker, which starts from a supplier and shows every batch they've delivered.
+  findAll: async ({ supplierId } = {}) => {
+    const where = {};
+    const sid = parseInt(supplierId, 10);
+    if (sid) where.supplierId = sid;
     const reports = await prisma.receivingReport.findMany({
+      where,
       include: {
         supplier: true,
         items: { include: { product: true } },

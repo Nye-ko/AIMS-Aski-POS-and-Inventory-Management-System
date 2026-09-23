@@ -6,6 +6,7 @@ import AdminDashboard  from './pages/ims/adminDashboard'
 import InventoryList  from './pages/ims/inventoryList'
 import Demand  from './pages/ims/demand'
 import Finance  from './pages/ims/finance'
+import SalesReport from './pages/ims/salesReport'
 import UserManagement from './pages/ims/UserManagement'
 import Sidebar from './pages/ims/sidebar'
 import RequireAuth from './auth/RequireAuth'
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="/inventoryList" element={<RequireAuth roles={['SUPERVISOR', 'INVENTORY']}><InventoryList /></RequireAuth>} />
         <Route path="/pages/ims/demand" element={<RequireAuth roles={['INVENTORY', 'ACCOUNTING']}><Demand /></RequireAuth>} />
         <Route path="/pages/ims/finance" element={<RequireAuth roles={['ACCOUNTING']}><Finance /></RequireAuth>} />
+        <Route path="/pages/ims/salesReport" element={<RequireAuth roles={['ACCOUNTING']}><SalesReport /></RequireAuth>} />
         <Route path="/pages/ims/UserManagement" element={<RequireAuth roles={[]}><UserManagement /></RequireAuth>} />
       </Route>
     </Routes>

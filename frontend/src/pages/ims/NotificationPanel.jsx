@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, PackageX, Clock, Loader2, X } from 'lucide-react';
 
 const ICONS = {
@@ -7,7 +8,17 @@ const ICONS = {
 };
 
 export default function NotificationPanel({ isOpen, onClose, notifications, loading, error, unreadCount, markAllRead }) {
+  // The unreadCount at the moment "mark all as read" was last clicked; still gray/disabled as long as
+  // no new notification has arrived since (unreadCount hasn't grown past that snapshot).
+  const [markedAtCount, setMarkedAtCount] = useState(null);
+  const justMarked = markedAtCount !== null && unreadCount <= markedAtCount;
+
   if (!isOpen) return null;
+
+  const handleMarkAllRead = () => {
+    markAllRead();
+    setMarkedAtCount(unreadCount);
+  };
 
   return (
     <>
@@ -78,9 +89,11 @@ export default function NotificationPanel({ isOpen, onClose, notifications, load
         {/* Footer */}
         <div className="mt-3 pt-3 border-t border-slate-200/60 text-center">
           <button
-            onClick={markAllRead}
-            disabled={notifications.length === 0}
-            className="text-xs font-bold text-blue-600 hover:text-blue-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={handleMarkAllRead}
+            disabled={notifications.length === 0 || justMarked}
+            className={`text-xs font-bold transition disabled:cursor-not-allowed ${
+              justMarked ? 'text-slate-400' : 'text-blue-600 hover:text-blue-800 disabled:opacity-40'
+            }`}
           >
             Mark all as read
           </button>

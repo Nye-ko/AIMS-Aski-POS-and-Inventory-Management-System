@@ -48,113 +48,191 @@ enum StockMovementType {
 // MODELS
 
 model User {
-  id               Int               @id @default(autoincrement())
-  fullName         String?
-  username         String            @unique
-  password         String
-  role             Role              @default(CASHIER)
-  isActive         Boolean           @default(true)
-  pin              String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id        Int      @id @default(autoincrement())
+  fullName  String?
+  username  String   @unique
+  password  String
+  role      Role     @default(CASHIER)
+  isActive  Boolean  @default(true)
+  pin       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  transactions         Transaction[] @relation("TransactionCashier")
-  approvedTransactions Transaction[] @relation("TransactionApprover")
-  reconciliations  Reconciliation[]
-  purchaseOrders   PurchaseOrder[]
-  receivingReports ReceivingReport[]
-  purchaseReturns  PurchaseReturn[]
-  stockMovements   StockMovement[]
-  auditActions     AuditLog[]      @relation("AuditActor")
-  auditTargets     AuditLog[]      @relation("AuditTarget")
+  transactions         Transaction[]     @relation("TransactionCashier")
+  approvedTransactions Transaction[]     @relation("TransactionApprover")
+  reconciliations      Reconciliation[]
+  purchaseOrders       PurchaseOrder[]
+  receivingReports     ReceivingReport[]
+  purchaseReturns      PurchaseReturn[]
+  stockMovements       StockMovement[]
+  auditActions         AuditLog[]        @relation("AuditActor")
+  auditTargets         AuditLog[]        @relation("AuditTarget")
+  zReadingsAsCashier   ZReadingLog[]     @relation("ZReadingCashier")
+  zReadingsAsApprover  ZReadingLog[]     @relation("ZReadingApprover")
 }
 
 model Supplier {
-  id               Int               @id @default(autoincrement())
-  name             String
-  contactPerson    String?
-  email            String?
-  phone            String?
-  address          String?
-  leadTimeDays     Int               @default(7) // days from placing an order to its arrival; drives reorder points
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id            Int      @id @default(autoincrement())
+  name          String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  leadTimeDays  Int      @default(7) // days from placing an order to its arrival; drives reorder points
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   products         Product[]
   purchaseOrders   PurchaseOrder[]
   receivingReports ReceivingReport[]
   purchaseReturns  PurchaseReturn[]
+  stockBatches     StockBatch[]
 }
 
 model Product {
-  id                   Int                   @id @default(autoincrement())
-  name                 String
-  barcode              String?               @unique
-  price                Decimal               @db.Decimal(10, 2)
-  costPrice            Decimal               @default(0) @db.Decimal(10, 2)
-  category             String                @default("Uncategorized")
-  unit                 String                @default("PC/S")
-  stock                Int                   @default(0)
-  minStock             Int                   @default(10)
-  expiryDate           DateTime?
-  sku                  String?               @unique
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  id         Int       @id @default(autoincrement())
+  name       String
+  barcode    String?   @unique
+  price      Decimal   @db.Decimal(10, 2)
+  costPrice  Decimal   @default(0) @db.Decimal(10, 2)
+  category   String    @default("Uncategorized")
+  unit       String    @default("PC/S")
+  stock      Int       @default(0)
+  minStock   Int       @default(10)
+  expiryDate DateTime?
+  sku        String?   @unique
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  supplierId           Int?
-  supplier             Supplier?             @relation(fields: [supplierId], references: [id])
+  supplierId Int?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
 
   transactionItems     TransactionItem[]
   purchaseOrderItems   PurchaseOrderItem[]
   receivingReportItems ReceivingReportItem[]
   purchaseReturnItems  PurchaseReturnItem[]
   stockMovements       StockMovement[]
+  stockBatches         StockBatch[]
 
   @@index([barcode, name])
 }
 
-// Append-only ledger: every change to Product.stock writes one row in the same DB transaction.
-model StockMovement {
-  id            Int               @id @default(autoincrement())
-  productId     Int
-  product       Product           @relation(fields: [productId], references: [id])
+// One row per delivery/arrival of stock, so cost can be tracked per batch instead of Product
+// keeping a single overwritten costPrice. Consumed FIFO (oldest first) by sales, purchase
+// returns, and negative adjustments — see models/stockBatches.js. qtyRemaining reaching 0 means
+// the batch is exhausted, not that the row is deleted (it stays for cost history).
+model StockBatch {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
 
-  type          StockMovementType
-  quantity      Int               // signed change: + adds stock, - removes it
-  balanceAfter  Int
-  reason        String?
-  referenceType String?           // Transaction | ReceivingReport | PurchaseReturn
+  supplierId Int?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  unitCost     Decimal @db.Decimal(10, 2)
+  qtyReceived  Int
+  qtyRemaining Int
+
+  // Opening | ReceivingReport | ManualAdd | Adjustment — how this batch came into being.
+  referenceType String?
   referenceId   Int?
   referenceNo   String?
 
-  userId        Int?
-  user          User?             @relation(fields: [userId], references: [id])
+  receivedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
-  createdAt     DateTime          @default(now())
+  consumedBy TransactionItemBatch[]
+
+  @@index([productId, receivedAt])
+  @@index([productId, qtyRemaining])
+}
+
+// Append-only ledger: every change to Product.stock writes one row in the same DB transaction.
+model StockMovement {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  type          StockMovementType
+  quantity      Int // signed change: + adds stock, - removes it
+  balanceAfter  Int
+  reason        String?
+  referenceType String? // Transaction | ReceivingReport | PurchaseReturn
+  referenceId   Int?
+  referenceNo   String?
+
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@index([productId, createdAt])
   @@index([type, createdAt])
 }
 
 model Transaction {
-  id                   Int               @id @default(autoincrement())
-  transactionNo        String            @unique
-  subtotal             Decimal           @db.Decimal(10, 2)
-  discountPercent      Decimal           @default(0) @db.Decimal(5, 2)
-  discountAmount       Decimal           @default(0) @db.Decimal(10, 2)
-  supervisorAuthorized Boolean           @default(false)
-  totalAmount          Decimal           @db.Decimal(10, 2)
-  paymentMethod        PaymentMethod     @default(CASH)
+  id                   Int           @id @default(autoincrement())
+  transactionNo        String        @unique
+  subtotal             Decimal       @db.Decimal(10, 2)
+  discountPercent      Decimal       @default(0) @db.Decimal(5, 2)
+  discountAmount       Decimal       @default(0) @db.Decimal(10, 2)
+  supervisorAuthorized Boolean       @default(false)
+  totalAmount          Decimal       @db.Decimal(10, 2)
+  paymentMethod        PaymentMethod @default(CASH)
 
-  cashierId            Int
-  cashier              User              @relation("TransactionCashier", fields: [cashierId], references: [id])
+  cashierId Int
+  cashier   User @relation("TransactionCashier", fields: [cashierId], references: [id])
 
-  approvedById         Int?
-  approvedBy           User?             @relation("TransactionApprover", fields: [approvedById], references: [id])
+  approvedById Int?
+  approvedBy   User? @relation("TransactionApprover", fields: [approvedById], references: [id])
 
-  createdAt            DateTime          @default(now())
+  // Set whenever a Balik Tangkilik card was attached to the sale, whether or not the member's own
+  // 5% discount actually applied (a supervisor discount takes precedence on the discount itself,
+  // but the sale is still linked to the member for their history and points — see
+  // TransactionModel.createCheckout and MemberPointsLedger).
+  memberId Int?
+  member   Member? @relation(fields: [memberId], references: [id])
 
-  items                TransactionItem[]
+  createdAt DateTime @default(now())
+
+  items          TransactionItem[]
+  pointsLedger   MemberPointsLedger?
+}
+
+// A "Balik Tangkilik" loyalty member. The card number is derived from `id` (zero-padded to 6
+// digits) right after creation, so it is naturally sequential and unique with no counter table.
+model Member {
+  id         Int      @id @default(autoincrement())
+  cardNumber String   @unique
+  name       String
+  address    String?
+  phone      String?
+  // Running fractional balance — see MemberModel.computeEarnedPoints for how a sale's points are
+  // worked out. Kept as the live total so the POS/admin UI never has to sum the ledger to show it.
+  points     Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+
+  transactions Transaction[]
+  pointsLedger MemberPointsLedger[]
+}
+
+// Append-only log of points earned per sale, so a member's balance can always be explained.
+// There is only one entry type today (points earned at checkout); redemption is a later phase.
+model MemberPointsLedger {
+  id       Int    @id @default(autoincrement())
+  memberId Int
+  member   Member @relation(fields: [memberId], references: [id])
+
+  transactionId Int
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+
+  points       Decimal @db.Decimal(10, 2) // always positive for now (points earned this sale)
+  balanceAfter Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  @@unique([transactionId]) // a sale can only earn points once
+  @@index([memberId, createdAt])
 }
 
 model TransactionItem {
@@ -162,82 +240,147 @@ model TransactionItem {
   transactionId Int
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
-  productId     Int
-  product       Product     @relation(fields: [productId], references: [id])
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
 
-  barcode       String?
-  name          String
-  unitPrice     Decimal     @db.Decimal(10, 2)
-  quantity      Int
-  subtotal      Decimal     @db.Decimal(10, 2)
+  barcode   String?
+  name      String
+  unitPrice Decimal @db.Decimal(10, 2)
+  quantity  Int
+  subtotal  Decimal @db.Decimal(10, 2)
+
+  batchConsumptions TransactionItemBatch[]
+}
+
+// Which batch(es) a sold line's quantity actually came out of, and at what cost — split across
+// more than one batch when FIFO had to move on to the next one mid-line. batchId can be null: if
+// a product's batches ever fall short of what changeStock allowed to sell (e.g. drift from before
+// batch tracking existed), the shortfall is still recorded here at a fallback cost so a sale is
+// never blocked by a costing gap, just less precisely attributed.
+model TransactionItemBatch {
+  id                Int             @id @default(autoincrement())
+  transactionItemId Int
+  transactionItem   TransactionItem @relation(fields: [transactionItemId], references: [id], onDelete: Cascade)
+
+  batchId Int?
+  batch   StockBatch? @relation(fields: [batchId], references: [id])
+
+  quantity  Int
+  unitCost  Decimal @db.Decimal(10, 2)
+
+  @@index([transactionItemId])
+  @@index([batchId])
 }
 
 model Reconciliation {
-  id                 Int                  @id @default(autoincrement())
-  reportNo           String               @unique
-  reconciliationDate DateTime             @default(now())
+  id                 Int      @id @default(autoincrement())
+  reportNo           String   @unique
+  reconciliationDate DateTime @default(now())
 
-  cashierId          Int
-  cashier            User                 @relation(fields: [cashierId], references: [id])
+  cashierId Int
+  cashier   User @relation(fields: [cashierId], references: [id])
 
-  grossSales         Decimal              @default(0) @db.Decimal(10, 2)
-  pointsAvailed      Decimal              @default(0) @db.Decimal(10, 2)
-  totalDiscount      Decimal              @default(0) @db.Decimal(10, 2)
-  netSales           Decimal              @default(0) @db.Decimal(10, 2)
-  cashDiscount       Decimal              @default(0) @db.Decimal(10, 2)
+  grossSales    Decimal @default(0) @db.Decimal(10, 2)
+  pointsAvailed Decimal @default(0) @db.Decimal(10, 2)
+  totalDiscount Decimal @default(0) @db.Decimal(10, 2)
+  netSales      Decimal @default(0) @db.Decimal(10, 2)
+  cashDiscount  Decimal @default(0) @db.Decimal(10, 2)
 
-  p1000              Int                  @default(0)
-  p500               Int                  @default(0)
-  p200               Int                  @default(0)
-  p100               Int                  @default(0)
-  p50                Int                  @default(0)
-  p20                Int                  @default(0)
-  p10                Int                  @default(0)
-  p5                 Int                  @default(0)
-  p1                 Int                  @default(0)
-  p0_50              Int                  @default(0)
-  p0_25              Int                  @default(0)
-  p0_10              Int                  @default(0)
-  p0_05              Int                  @default(0)
-  p0_01              Int                  @default(0)
+  p1000 Int @default(0)
+  p500  Int @default(0)
+  p200  Int @default(0)
+  p100  Int @default(0)
+  p50   Int @default(0)
+  p20   Int @default(0)
+  p10   Int @default(0)
+  p5    Int @default(0)
+  p1    Int @default(0)
+  p0_50 Int @default(0)
+  p0_25 Int @default(0)
+  p0_10 Int @default(0)
+  p0_05 Int @default(0)
+  p0_01 Int @default(0)
 
-  posCash            Decimal              @default(0) @db.Decimal(10, 2)
-  cashierCash        Decimal              @default(0) @db.Decimal(10, 2)
-  shortOver          Decimal              @default(0) @db.Decimal(10, 2)
+  posCash     Decimal @default(0) @db.Decimal(10, 2)
+  cashierCash Decimal @default(0) @db.Decimal(10, 2)
+  shortOver   Decimal @default(0) @db.Decimal(10, 2)
 
-  status             ReconciliationStatus @default(COMPLETED)
-  notes              String?              @db.Text
-  businessDate       String?
-  createdAt          DateTime             @default(now())
+  status       ReconciliationStatus @default(COMPLETED)
+  notes        String?              @db.Text
+  businessDate String?
+  createdAt    DateTime             @default(now())
 
   @@index([cashierId, businessDate])
 }
 
+// A cashier's Z-Reading: the supervisor-gated, printed sales report that closes out everything
+// they've rung up since their last one (see models/ZReading.js). Distinct from Reconciliation
+// above — that one is the cash-drawer count; this one is the sales/tax-style report (gross,
+// discounts, category totals, and a running store-wide grand total), modeled on a real BIR-style
+// Z-Reading receipt. Append-only: once printed, a Z-Reading is never edited or deleted.
+model ZReadingLog {
+  id       Int    @id @default(autoincrement())
+  reportNo String @unique
+
+  cashierId Int
+  cashier   User @relation("ZReadingCashier", fields: [cashierId], references: [id])
+
+  approvedById Int
+  approvedBy   User @relation("ZReadingApprover", fields: [approvedById], references: [id])
+
+  // The range of this cashier's own transactions this reading covers (their prior Z-Reading's
+  // end, exclusive, through the last transaction at the moment this one was run). Null when the
+  // cashier had zero transactions in that window.
+  fromTransactionId  Int?
+  toTransactionId    Int?
+  beginTransactionNo String?
+  endTransactionNo   String?
+  transactionCount   Int     @default(0)
+
+  grossSales    Decimal @db.Decimal(12, 2)
+  totalDiscount Decimal @db.Decimal(12, 2)
+  pointsAvailed Decimal @default(0) @db.Decimal(12, 2)
+  netSales      Decimal @db.Decimal(12, 2)
+
+  // Store-wide (every cashier) cumulative sales total, not just this cashier's — see
+  // ZReadingModel.buildSummary. grandTotalAfter - grandTotalBefore always equals netSales.
+  grandTotalBefore Decimal @db.Decimal(14, 2)
+  grandTotalAfter  Decimal @db.Decimal(14, 2)
+
+  // [{ method, count, amount }] and [{ category, quantity, amount }]
+  paymentBreakdown  Json
+  categoryBreakdown Json
+
+  createdAt DateTime @default(now())
+
+  @@index([cashierId, createdAt])
+}
+
 model PurchaseOrder {
-  id          Int                 @id @default(autoincrement())
-  poNumber    String              @unique
-  status      OrderStatus         @default(PENDING)
-  terms       String?             @default("N/A")
-  remarks     String?             @db.Text
-  preparedBy  String?
+  id              Int         @id @default(autoincrement())
+  poNumber        String      @unique
+  status          OrderStatus @default(PENDING)
+  terms           String?     @default("N/A")
+  remarks         String?     @db.Text
+  preparedBy      String?
   shipTo          String?
   shippingAddress String?
   purpose         String?
-  tagging         String?             @default("Regular")
-  discount        Decimal             @default(0) @db.Decimal(10, 2)
+  tagging         String?     @default("Regular")
+  discount        Decimal     @default(0) @db.Decimal(10, 2)
   // Net payable: (line subtotals + 12% VAT) - discount
-  totalAmount Decimal             @db.Decimal(10, 2)
+  totalAmount     Decimal     @db.Decimal(10, 2)
 
-  supplierId  Int
-  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+  supplierId Int
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
 
   createdById Int
-  createdBy   User                @relation(fields: [createdById], references: [id])
+  createdBy   User @relation(fields: [createdById], references: [id])
 
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  items       PurchaseOrderItem[]
+  items           PurchaseOrderItem[]
   receivingReport ReceivingReport?
 }
 
@@ -246,35 +389,35 @@ model PurchaseOrderItem {
   purchaseOrderId Int
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 
-  productId       Int
-  product         Product       @relation(fields: [productId], references: [id])
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
 
-  quantity        Int
-  unitCost        Decimal       @db.Decimal(10, 2)
-  subtotal        Decimal       @db.Decimal(10, 2)
+  quantity Int
+  unitCost Decimal @db.Decimal(10, 2)
+  subtotal Decimal @db.Decimal(10, 2)
 }
 
 model ReceivingReport {
-  id              Int                   @id @default(autoincrement())
-  rrNumber        String                @unique
-  deliveryNote    String?
-  invoiceNo       String?
-  terms           String?               @default("N/A")
-  remarks         String?               @db.Text
+  id           Int     @id @default(autoincrement())
+  rrNumber     String  @unique
+  deliveryNote String?
+  invoiceNo    String?
+  terms        String? @default("N/A")
+  remarks      String? @db.Text
 
-  purchaseOrderId Int                   @unique
-  purchaseOrder   PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId Int           @unique
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
 
-  supplierId      Int
-  supplier        Supplier              @relation(fields: [supplierId], references: [id])
+  supplierId Int
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
 
-  receivedById    Int
-  receivedBy      User                  @relation(fields: [receivedById], references: [id])
+  receivedById Int
+  receivedBy   User @relation(fields: [receivedById], references: [id])
 
-  receivedAt      DateTime              @default(now())
+  receivedAt DateTime @default(now())
 
-  items           ReceivingReportItem[]
-  purchaseReturns PurchaseReturn[]
+  items               ReceivingReportItem[]
+  purchaseReturnItems PurchaseReturnItem[]
 }
 
 model ReceivingReportItem {
@@ -282,33 +425,33 @@ model ReceivingReportItem {
   receivingReportId Int
   receivingReport   ReceivingReport @relation(fields: [receivingReportId], references: [id], onDelete: Cascade)
 
-  productId         Int
-  product           Product         @relation(fields: [productId], references: [id])
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
 
-  quantity          Int
-  unitCost          Decimal         @db.Decimal(10, 2)
-  subtotal          Decimal         @db.Decimal(10, 2)
+  quantity Int
+  unitCost Decimal @db.Decimal(10, 2)
+  subtotal Decimal @db.Decimal(10, 2)
 }
 
+// A return starts from a supplier, not a single Receiving Report — its lines can each draw
+// from a different delivery batch, which is why the Receiving Report reference lives on
+// PurchaseReturnItem rather than here.
 model PurchaseReturn {
-  id                Int                  @id @default(autoincrement())
-  returnNo          String               @unique
-  reason            String               @db.Text
-  terms             String?              @default("N/A")
-  remarks           String?              @db.Text
+  id       Int     @id @default(autoincrement())
+  returnNo String  @unique
+  reason   String  @db.Text
+  terms    String? @default("N/A")
+  remarks  String? @db.Text
 
-  receivingReportId Int
-  receivingReport   ReceivingReport      @relation(fields: [receivingReportId], references: [id])
+  supplierId Int
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
 
-  supplierId        Int
-  supplier          Supplier             @relation(fields: [supplierId], references: [id])
+  createdById Int
+  createdBy   User @relation(fields: [createdById], references: [id])
 
-  createdById       Int
-  createdBy         User                 @relation(fields: [createdById], references: [id])
+  createdAt DateTime @default(now())
 
-  createdAt         DateTime             @default(now())
-
-  items             PurchaseReturnItem[]
+  items PurchaseReturnItem[]
 }
 
 model PurchaseReturnItem {
@@ -316,18 +459,22 @@ model PurchaseReturnItem {
   purchaseReturnId Int
   purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
 
-  productId        Int
-  product          Product        @relation(fields: [productId], references: [id])
+  // Which delivery this line's returned quantity is drawn from and capped against.
+  receivingReportId Int
+  receivingReport   ReceivingReport @relation(fields: [receivingReportId], references: [id])
 
-  quantity         Int
-  unitCost         Decimal        @db.Decimal(10, 2)
-  subtotal         Decimal        @db.Decimal(10, 2)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity Int
+  unitCost Decimal @db.Decimal(10, 2)
+  subtotal Decimal @db.Decimal(10, 2)
 }
 
 // Admin actions on user accounts. Username snapshots survive even if a user row is later removed.
 model AuditLog {
   id             Int      @id @default(autoincrement())
-  action         String   // USER_CREATED | USER_ROLE_CHANGED | USER_ACTIVATED | USER_DEACTIVATED | USER_PIN_SET | USER_PIN_CLEARED | USER_PASSWORD_RESET
+  action         String // USER_CREATED | USER_ROLE_CHANGED | USER_ACTIVATED | USER_DEACTIVATED | USER_PIN_SET | USER_PIN_CLEARED | USER_PASSWORD_RESET
   actorId        Int?
   actor          User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
   actorUsername  String
@@ -346,28 +493,28 @@ model AuditLog {
 // actually sold. Deliberately no foreign keys to Product: this is history and must survive product
 // changes; the seeder clears it together with the sales it was graded against.
 model ForecastSnapshot {
-  id            Int                    @id @default(autoincrement())
-  asOf          DateTime               @db.Date // store-local "today"; the forecast used sales up to the day before
-  model         String                 // engine@version, e.g. rate-mean@1.0.0
-  source        String                 // ai-service | fallback
-  revenue7      Decimal                @db.Decimal(12, 2) // forecast gross revenue, first 7 days from asOf
-  revenue30     Decimal                @db.Decimal(12, 2) // forecast gross revenue, first 30 days from asOf
-  createdAt     DateTime               @default(now())
+  id        Int      @id @default(autoincrement())
+  asOf      DateTime @db.Date // store-local "today"; the forecast used sales up to the day before
+  model     String // engine@version, e.g. rate-mean@1.0.0
+  source    String // ai-service | fallback
+  revenue7  Decimal  @db.Decimal(12, 2) // forecast gross revenue, first 7 days from asOf
+  revenue30 Decimal  @db.Decimal(12, 2) // forecast gross revenue, first 30 days from asOf
+  createdAt DateTime @default(now())
 
-  items         ForecastSnapshotItem[]
+  items ForecastSnapshotItem[]
 
   @@unique([asOf, model])
 }
 
 model ForecastSnapshotItem {
-  id           Int              @id @default(autoincrement())
-  snapshotId   Int
-  snapshot     ForecastSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  id         Int              @id @default(autoincrement())
+  snapshotId Int
+  snapshot   ForecastSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
-  productId    Int
-  sku          String
-  forecast7    Float            // forecast units over the 7 days from asOf
-  confidence   String
+  productId  Int
+  sku        String
+  forecast7  Float // forecast units over the 7 days from asOf
+  confidence String
 
   @@unique([snapshotId, productId])
 }

@@ -8,6 +8,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const { changeStock, STOCK_IN_TYPES } = require('./stockLedger');
+const { createBatch, consumeFIFO } = require('./stockBatches');
 
 class ProductError extends Error {
   constructor(status, message) {
@@ -119,25 +120,41 @@ const latestStockInDate = async (client, productId) => {
   return last ? last.createdAt : null;
 };
 
+// Shared by findAll/findManyFormatted: attaches each product's batchDate (last stock-in) and
+// runs them through formatProduct in one batch instead of one query per product.
+const formatMany = async (products) => {
+  if (products.length === 0) return [];
+  const lastStockIns = await prisma.stockMovement.groupBy({
+    by: ['productId'],
+    where: { productId: { in: products.map((p) => p.id) }, type: { in: STOCK_IN_TYPES } },
+    _max: { createdAt: true },
+  });
+  const batchByProduct = new Map(lastStockIns.map((r) => [r.productId, r._max.createdAt]));
+  return products.map((p) => formatProduct(p, batchByProduct.get(p.id)));
+};
+
 const ProductModel = {
   // Fetch all products with supplier details & computed statuses for Inventory List
   findAll: async () => {
-    const [products, lastStockIns] = await Promise.all([
-      prisma.product.findMany({
-        include: {
-          supplier: true,
-        },
-        orderBy: { id: 'asc' },
-      }),
-      prisma.stockMovement.groupBy({
-        by: ['productId'],
-        where: { type: { in: STOCK_IN_TYPES } },
-        _max: { createdAt: true },
-      }),
-    ]);
+    const products = await prisma.product.findMany({
+      include: {
+        supplier: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    return formatMany(products);
+  },
 
-    const batchByProduct = new Map(lastStockIns.map((r) => [r.productId, r._max.createdAt]));
-    return products.map((p) => formatProduct(p, batchByProduct.get(p.id)));
+  // Formatted rows for a specific set of product ids, in the same shape as findAll — used to
+  // broadcast a `stock_updated` socket event after a sale, receiving report, purchase return, or
+  // manual stock change, so the Inventory page can patch/insert rows live without a refetch.
+  findManyFormatted: async (ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const products = await prisma.product.findMany({
+      where: { id: { in: [...new Set(ids)] } },
+      include: { supplier: true },
+    });
+    return formatMany(products);
   },
 
   // Find product by ID
@@ -204,6 +221,14 @@ const ProductModel = {
             reason: 'Initial stock',
             userId,
           });
+          await createBatch(tx, {
+            productId: created.id,
+            supplierId,
+            unitCost: costPrice,
+            quantity: stock,
+            referenceType: 'Opening',
+            referenceNo: 'Initial stock',
+          });
         }
         const product = await tx.product.findUnique({ where: { id: created.id }, include: { supplier: true } });
         return formatProduct(product, await latestStockInDate(tx, created.id));
@@ -223,12 +248,22 @@ const ProductModel = {
     const validSupplierId = supplierId ? parseInt(supplierId) : null;
     await assertSupplierExists(validSupplierId);
 
-    const exists = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+    const exists = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, costPrice: true } });
     if (!exists) throw new ProductError(404, 'Product not found.');
 
     return prisma.$transaction(async (tx) => {
       await changeStock(tx, { productId, delta: qty, type: 'MANUAL_ADD', reason: 'Stock added manually', userId });
       if (validSupplierId) await tx.product.update({ where: { id: productId }, data: { supplierId: validSupplierId } });
+      await createBatch(tx, {
+        productId,
+        supplierId: validSupplierId,
+        // No cost is collected on this form, so the batch takes the product's current cost —
+        // still keeps FIFO/qty accounting exact even though it can't add real per-delivery cost info.
+        unitCost: exists.costPrice,
+        quantity: qty,
+        referenceType: 'ManualAdd',
+        referenceNo: 'Stock added manually',
+      });
       const product = await tx.product.findUnique({ where: { id: productId }, include: { supplier: true } });
       return formatProduct(product, await latestStockInDate(tx, productId));
     });
@@ -261,7 +296,7 @@ const ProductModel = {
 
     return prisma.$transaction(async (tx) => {
       // Lock the row so the delta is computed against the stock we will actually change.
-      const locked = await tx.$queryRaw`SELECT stock FROM "Product" WHERE id = ${productId} FOR UPDATE`;
+      const locked = await tx.$queryRaw`SELECT stock, "costPrice" FROM "Product" WHERE id = ${productId} FOR UPDATE`;
       if (locked.length === 0) throw new ProductError(404, 'Product not found.');
       const current = locked[0].stock;
 
@@ -276,6 +311,22 @@ const ProductModel = {
         reason: cleanNotes ? `${reason}: ${cleanNotes}` : reason,
         userId,
       });
+
+      // Keep batch quantities in sync: a positive adjustment (e.g. a count correction upward)
+      // opens a new batch at the product's current cost; a negative one (damage, loss, a
+      // downward count fix) consumes the oldest batches first, same as a sale.
+      if (delta > 0) {
+        await createBatch(tx, {
+          productId,
+          unitCost: locked[0].costPrice,
+          quantity: delta,
+          referenceType: 'Adjustment',
+          referenceNo: reason,
+        });
+      } else {
+        await consumeFIFO(tx, productId, -delta, locked[0].costPrice);
+      }
+
       const product = await tx.product.findUnique({ where: { id: productId }, include: { supplier: true } });
       return formatProduct(product, await latestStockInDate(tx, productId));
     });

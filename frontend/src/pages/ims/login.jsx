@@ -12,10 +12,13 @@ export default function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Already logged in (e.g. hit the browser back button into "/") — bounce
-  // straight to the role's home instead of showing the login form again.
+  // Already logged in (e.g. hit the browser back button into "/") — bounce straight to the role's
+  // home instead of showing the login form again. This is a push, not a replace: it keeps "/" as a
+  // live entry in history (paired with the login redirect below also pushing) so the back button
+  // always has an in-app entry to land on, which immediately bounces forward again — the back button
+  // ends up just refreshing the current authenticated page instead of exiting the app entirely.
   if (isAuthenticated) {
-    return <Navigate to={ROLE_HOME[role] || '/adminDashboard'} replace />;
+    return <Navigate to={ROLE_HOME[role] || '/adminDashboard'} />;
   }
 
   const handleSubmit = async (e) => {
@@ -25,7 +28,7 @@ export default function Login() {
     try {
       const authed = await login(username, password);
       const dest = ROLE_HOME[authed.role] || '/adminDashboard';
-      navigate(dest, { replace: true });
+      navigate(dest);
     } catch (err) {
       setError(err.message || 'Login failed');
       setBusy(false);

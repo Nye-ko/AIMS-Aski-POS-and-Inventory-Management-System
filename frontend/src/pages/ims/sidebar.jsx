@@ -6,6 +6,7 @@ import {
   Package,
   BrainCircuit,
   BarChart3,
+  Receipt,
   Settings,
   LogOut,
   ChevronLeft,
@@ -152,6 +153,7 @@ export default function Sidebar() {
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList', roles: ['SUPERVISOR', 'INVENTORY'] },
     { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand', roles: ['INVENTORY', 'ACCOUNTING'] },
     { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance', roles: ['ACCOUNTING'] },
+    { id: 'salesReport', label: 'Sales Report', icon: Receipt, path: '/pages/ims/salesReport', roles: ['ACCOUNTING'] },
     { id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement', roles: [] },
   ];
   const sidebarLinks = allSidebarLinks.filter(

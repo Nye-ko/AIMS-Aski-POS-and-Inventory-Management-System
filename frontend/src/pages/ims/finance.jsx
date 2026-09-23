@@ -22,7 +22,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
   Legend
 } from 'recharts';
 import NotificationPanel from './NotificationPanel';
@@ -280,35 +279,8 @@ export default function Finance() {
             <p className="text-xs text-slate-400 mb-4">Shift reconciliation balance check</p>
           </div>
 
-          <div className="h-48 w-full relative z-10 mb-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={registerVarianceData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                <XAxis type="number" stroke="#E2E8F0" fontSize={11} tickFormatter={(val) => `₱${val}`} />
-                <YAxis dataKey="shift" type="category" stroke="#E2E8F0" fontSize={11} width={80} tickLine={false} />
-                <Tooltip
-                  formatter={(value) => [`₱${value}`, 'Variance']}
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#fff'
-                  }}
-                  labelStyle={{ color: '#E2E8F0' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-                <ReferenceLine x={0} stroke="#64748b" strokeWidth={2} />
-                <Bar
-                  dataKey="variance"
-                  fill="#FFFFFF"
-                  radius={[4, 4, 4, 4]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Mini Shift Audit Log List */}
-          <div className="space-y-2 relative z-10 border-t border-slate-800 pt-3 max-h-40 overflow-y-auto transparent-scrollbar">
+          {/* Shift Audit Log List — each cashier's short/over */}
+          <div className="space-y-2 relative z-10 max-h-64 overflow-y-auto transparent-scrollbar">
             {registerVarianceData.length === 0 ? (
               <p className="text-xs text-slate-500 text-center py-2">No shift log data available</p>
             ) : (
