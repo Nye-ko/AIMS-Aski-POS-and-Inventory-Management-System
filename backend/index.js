@@ -13,6 +13,9 @@ const cron = require('node-cron');
 // Import Models
 const { ProductModel, ProductError, ADJUSTMENT_REASONS, prisma } = require('./models/Product');
 const { StockMovementModel, STOCK_MOVEMENT_TYPES } = require('./models/StockMovement');
+const { StockBatchModel } = require('./models/StockBatch');
+const { ReconciliationReportModel } = require('./models/ReconciliationReport');
+const { ZReadingModel } = require('./models/ZReading');
 const TransactionModel = require('./models/Transaction');
 const ReconciliationModel = require('./models/Reconciliation');
 const DashboardModel = require('./models/Dashboard');
@@ -34,6 +37,7 @@ const {
 } = require('./models/Auth');
 const { UserModel, UserError } = require('./models/User');
 const { AuditLogModel, AUDIT_ACTIONS } = require('./models/AuditLog');
+const MemberModel = require('./models/Member');
 
 // Import Services
 const mailer = require('./services/mailer');
@@ -292,6 +296,7 @@ app.patch('/api/products/:id/add-stock', authenticateToken, requireRole(...ROLES
   try {
     const { quantity, supplierId } = req.body;
     const updatedProduct = await ProductModel.addStock(req.params.id, quantity, supplierId, req.user.id);
+    req.app.get('io').to(DASHBOARD_ROOM).emit('stock_updated', { products: [updatedProduct] });
     res.json(updatedProduct);
   } catch (error) {
     sendProductError(res, error, 'update stock');
@@ -303,6 +308,7 @@ app.post('/api/products/:id/adjust-stock', authenticateToken, requireRole(...ROL
   try {
     const { quantityChange, countedQuantity, reason, notes } = req.body;
     const updatedProduct = await ProductModel.adjustStock(req.params.id, { quantityChange, countedQuantity, reason, notes }, req.user.id);
+    req.app.get('io').to(DASHBOARD_ROOM).emit('stock_updated', { products: [updatedProduct] });
     res.json(updatedProduct);
   } catch (error) {
     sendProductError(res, error, 'adjust stock');
@@ -327,6 +333,34 @@ app.get('/api/stock-movements', authenticateToken, requireRole(...ROLES.INVENTOR
   }
 });
 
+// 3d-2. The whole ledger across every product (unpaginated), for the Ledger/History report's Export button
+app.get('/api/stock-movements/export', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    if (req.query.type && !STOCK_MOVEMENT_TYPES.includes(req.query.type)) {
+      return res.status(400).json({ error: `type must be one of: ${STOCK_MOVEMENT_TYPES.join(', ')}` });
+    }
+    res.json(await StockMovementModel.findAllForExport(req.query));
+  } catch (error) {
+    console.error('Error exporting stock movements:', error);
+    res.status(500).json({ error: 'Failed to export stock movements' });
+  }
+});
+
+// 3d-3. Stock & sales reconciliation report for a date range (Phase 5) — cross-checks the
+// ledger's own math against itself and against the POS's reported sales totals. Deliberately not
+// /api/reconciliation — that path is already the cashier's EOD cash-count reconciliation below.
+app.get('/api/reconciliation-report', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    res.json(await ReconciliationReportModel.build({ from: req.query.from, to: req.query.to }));
+  } catch (error) {
+    if (error instanceof ReconciliationReportModel.ReconciliationError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Error building reconciliation report:', error);
+    res.status(500).json({ error: 'Failed to build reconciliation report' });
+  }
+});
+
 // 3e. One product's movement history
 app.get('/api/products/:id/movements', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
   try {
@@ -348,6 +382,19 @@ app.get('/api/products/:id/movements/export', authenticateToken, requireRole(...
   } catch (error) {
     console.error('Error exporting product movements:', error);
     res.status(500).json({ error: 'Failed to export product movements' });
+  }
+});
+
+// 3g. That product's cost batches (FIFO-consumed by sales/returns/adjustments), for the Stock
+// History modal's Batches tab
+app.get('/api/products/:id/batches', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!productId) return res.status(400).json({ error: 'Invalid product id' });
+    res.json(await StockBatchModel.findByProduct(productId));
+  } catch (error) {
+    console.error('Error fetching product batches:', error);
+    res.status(500).json({ error: 'Failed to fetch product batches' });
   }
 });
 
@@ -553,6 +600,8 @@ app.post('/api/receiving-reports', authenticateToken, requireRole(...ROLES.INVEN
       remarks,
       receivedById: req.user.id,
     });
+    const changedProducts = await ProductModel.findManyFormatted(receivingReport.items.map((i) => i.productId));
+    req.app.get('io').to(DASHBOARD_ROOM).emit('stock_updated', { products: changedProducts });
     res.status(201).json(receivingReport);
   } catch (error) {
     sendPurchasingError(res, error, 'create receiving report');
@@ -617,6 +666,8 @@ app.post('/api/purchase-returns', authenticateToken, requireRole(...ROLES.INVENT
       remarks,
       createdById: req.user.id,
     });
+    const changedProducts = await ProductModel.findManyFormatted(purchaseReturn.items.map((i) => i.productId));
+    req.app.get('io').to(DASHBOARD_ROOM).emit('stock_updated', { products: changedProducts });
     res.status(201).json(purchaseReturn);
   } catch (error) {
     sendPurchasingError(res, error, 'create purchase return');
@@ -663,6 +714,63 @@ app.get('/api/purchase-returns/:id/export', authenticateToken, requireRole(...RO
   } catch (error) {
     console.error('Error exporting purchase return:', error);
     res.status(500).json({ error: 'Failed to export purchase return' });
+  }
+});
+
+// --- BALIK TANGKILIK MEMBERS ---
+
+// Read access is shared by the POS "attach member" lookup and the admin Members page.
+const MEMBERS_READ = [...ROLES.POS, ...ROLES.INVENTORY_READ];
+
+// Name/card-number search for the POS "attach member" lookup box (and, with no query, the
+// admin Members page's full list).
+app.get('/api/members', authenticateToken, requireRole(...MEMBERS_READ), async (req, res) => {
+  try {
+    if (req.query.search) return res.json(await MemberModel.search(req.query.search));
+    res.json(await MemberModel.findAll());
+  } catch (error) {
+    console.error('Error fetching members:', error);
+    res.status(500).json({ error: 'Failed to fetch members' });
+  }
+});
+
+// A member's points-earning history (newest first), for the admin Members page.
+app.get('/api/members/:id/points-history', authenticateToken, requireRole(...MEMBERS_READ), async (req, res) => {
+  try {
+    res.json(await MemberModel.findPointsHistory(req.params.id));
+  } catch (error) {
+    if (error instanceof MemberModel.MemberError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Error fetching member points history:', error);
+    res.status(500).json({ error: 'Failed to fetch points history' });
+  }
+});
+
+// Exact card-number lookup, e.g. after scanning/typing a physical card.
+app.get('/api/members/:cardNumber', authenticateToken, requireRole(...MEMBERS_READ), async (req, res) => {
+  try {
+    res.json(await MemberModel.findByCardNumber(req.params.cardNumber));
+  } catch (error) {
+    if (error instanceof MemberModel.MemberError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Error looking up member:', error);
+    res.status(500).json({ error: 'Failed to look up member' });
+  }
+});
+
+// Registers a new Balik Tangkilik member, from the POS.
+app.post('/api/members', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
+  try {
+    const member = await MemberModel.create(req.body);
+    res.status(201).json(member);
+  } catch (error) {
+    if (error instanceof MemberModel.MemberError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Error registering member:', error);
+    res.status(500).json({ error: 'Failed to register member' });
   }
 });
 
@@ -875,6 +983,12 @@ app.post('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCIL
     io.to(FINANCE_ROOM).emit('finance_updated', updatedFinance);
 
     res.status(201).json({ message: 'Reconciliation Submitted', record });
+
+    // Fire-and-forget silent print, same pattern as the checkout receipt and Z-Reading —
+    // never blocks or fails the request. Mirrors what "Export X-Reading" downloads as a sheet.
+    receiptPrinter
+      .printXReading(record)
+      .catch((err) => console.error('[receipt-printer] Unexpected X-Reading print error:', err.message));
   } catch (error) {
     if (sendApprovalOrReconError(res, error)) return;
     console.error('Error creating reconciliation:', error);
@@ -893,6 +1007,47 @@ app.get('/api/reconciliation', authenticateToken, requireRole(...ROLES.RECONCILI
   } catch (error) {
     console.error('Error fetching reconciliations:', error);
     res.status(500).json({ error: 'Failed to fetch all reconciliations' });
+  }
+});
+
+// --- Z-READING (supervisor-gated printed sales report) ---
+
+// Closes out everything this cashier has rung up since their last Z-Reading, persists the log,
+// and silently prints it. Needs a supervisor approval token (POST /api/pos/approve with action
+// ZREAD), sent in the X-Approval-Token header — same pattern as the X-Reading/EOD gate above.
+app.post('/api/pos/z-reading', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
+  try {
+    const approval = await posApproval.verifyApproval(req.headers['x-approval-token'], {
+      action: 'ZREAD',
+      cashierId: req.user.id,
+    });
+    const report = await ZReadingModel.create(req.user.id, approval.approverId);
+    posApproval.consumeApproval(approval);
+
+    res.status(201).json(report);
+
+    // Fire-and-forget silent print, same pattern as the checkout receipt — never blocks or fails the request.
+    receiptPrinter
+      .printZReading(report)
+      .catch((err) => console.error('[receipt-printer] Unexpected Z-Reading print error:', err.message));
+  } catch (error) {
+    if (error instanceof posApproval.ApprovalError || error instanceof ZReadingModel.ZReadingError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error('Error creating Z-Reading:', error);
+    res.status(500).json({ error: 'Failed to create Z-Reading' });
+  }
+});
+
+// This cashier's own past Z-Readings; a supervisor/admin may look up another cashier's via ?cashierId=.
+app.get('/api/pos/z-reading', authenticateToken, requireRole(...ROLES.POS), async (req, res) => {
+  try {
+    const canViewOthers = req.user.role === 'SUPERVISOR' || req.user.role === 'ADMIN';
+    const cashierId = canViewOthers && req.query.cashierId ? req.query.cashierId : req.user.id;
+    res.json(await ZReadingModel.findAll({ cashierId }));
+  } catch (error) {
+    console.error('Error fetching Z-Readings:', error);
+    res.status(500).json({ error: 'Failed to fetch Z-Readings' });
   }
 });
 

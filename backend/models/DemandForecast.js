@@ -138,12 +138,27 @@ const computeForecast = async (daysToForecast, today) => {
   }
 };
 
+// When no explicit `asOf` is given, "today" defaults to the day after the most recent real sale
+// instead of the server clock: a data backfill (e.g. importing May-July history with no August/September
+// sales yet recorded) would otherwise leave a gap of pure zero-sales days right before the real clock
+// date, which zeros out every product's demand rate. This is self-correcting — once live sales catch up
+// to the real calendar date, this naturally returns the real date instead of trailing behind it forever.
+const resolveDefaultAsOf = async () => {
+  const real = localDate(new Date(), STORE_TIMEZONE);
+  const latest = await prisma.transaction.aggregate({ _max: { createdAt: true } });
+  if (!latest._max.createdAt) return real;
+  const dayAfterLastSale = new Date(`${localDate(latest._max.createdAt, STORE_TIMEZONE)}T00:00:00Z`);
+  dayAfterLastSale.setUTCDate(dayAfterLastSale.getUTCDate() + 1);
+  const candidate = dayAfterLastSale.toISOString().slice(0, 10);
+  return candidate < real ? candidate : real;
+};
+
 // `asOf` (YYYY-MM-DD, store-local "today") is injectable so a given day's forecast can be reproduced.
 // Results are cached for a few minutes (cleared by any successful write request, see index.js); `refresh`
 // skips the cache. `meta.cached` says whether this response came from it.
 const getForecastData = async (days = 30, { asOf, refresh = false } = {}) => {
   const daysToForecast = clampHorizon(days);
-  const today = asOf || localDate(new Date(), STORE_TIMEZONE);
+  const today = asOf || (await resolveDefaultAsOf());
   if (refresh) forecastCache.invalidate();
   const { value, cached } = await forecastCache.get(`${today}|${daysToForecast}`, () => computeForecast(daysToForecast, today), {
     ttlFor: (result) => (result.meta && result.meta.source === 'fallback' ? FALLBACK_CACHE_MS : CACHE_MS),

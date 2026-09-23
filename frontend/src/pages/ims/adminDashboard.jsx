@@ -386,23 +386,26 @@ export default function Dashboard() {
 
             {forecast && forecast.kpis && (
               <div className="grid grid-cols-3 gap-2 mb-3 relative z-10">
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2">
+                <div className="rounded-xl bg-white/5 border border-white/10 p-2 min-w-0">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Projected</p>
-                  <p className="text-sm font-black text-white tracking-tight">
-                    ₱{Number(forecast.kpis.projectedGross).toLocaleString('en-US')}
+                  <p
+                    className="text-sm font-black text-white tracking-tight truncate"
+                    title={`₱${Number(forecast.kpis.projectedGross).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  >
+                    ₱{Number(forecast.kpis.projectedGross).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2">
+                <div className="rounded-xl bg-white/5 border border-white/10 p-2 min-w-0">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Growth</p>
-                  <p className={`text-sm font-black tracking-tight ${
+                  <p className={`text-sm font-black tracking-tight truncate ${
                     String(forecast.kpis.grossGrowth).startsWith('-') ? 'text-rose-300' : 'text-emerald-300'
                   }`}>
                     {forecast.kpis.grossGrowth}
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-2">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">High-risk SKUs</p>
-                  <p className="text-sm font-black text-white tracking-tight">
+                <div className="rounded-xl bg-white/5 border border-white/10 p-2 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-tight text-slate-400 whitespace-nowrap">Risk SKUs</p>
+                  <p className="text-sm font-black text-white tracking-tight truncate">
                     {forecast.kpis.highRiskSKUs}
                   </p>
                 </div>
@@ -420,7 +423,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={forecast.revenueTrajectory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={forecast.revenueTrajectory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="navyActualGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.55} />
@@ -433,7 +436,13 @@ export default function Dashboard() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                     <XAxis dataKey="day" stroke="#94a3b8" fontSize={9} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} tickFormatter={(v) => `₱${Number(v).toLocaleString()}`} />
+                    <YAxis
+                      stroke="#94a3b8"
+                      fontSize={9}
+                      tickLine={false}
+                      width={44}
+                      tickFormatter={(v) => (Number(v) >= 1000 ? `₱${(Number(v) / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k` : `₱${Number(v)}`)}
+                    />
                     <Tooltip
                       formatter={(v, key) => [v == null ? '—' : `₱${Number(v).toLocaleString()}`, key === 'actual' ? 'Actual' : 'Forecast']}
                       contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.92)', backdropFilter: 'blur(12px)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}

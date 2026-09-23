@@ -1,6 +1,7 @@
 const { prisma } = require('./Product');
 const { VAT_RATE, PurchasingError } = require('./PurchaseOrder');
 const { changeStock } = require('./stockLedger');
+const { createBatch } = require('./stockBatches');
 
 const MAX_UNIT_COST = 10000000;
 
@@ -160,7 +161,8 @@ const ReceivingReportModel = {
 
       const rrNumber = generateRrNumber(created.id, created.receivedAt);
 
-      // Received goods land in stock (logged in the ledger) at their actual received cost
+      // Received goods land in stock (logged in the ledger) at their actual received cost, and
+      // open a new batch so that cost stays attributable even after later receipts change it.
       for (const item of lineItems) {
         await changeStock(tx, {
           productId: item.productId,
@@ -173,6 +175,16 @@ const ReceivingReportModel = {
           userId: validReceivedById,
         });
         await tx.product.update({ where: { id: item.productId }, data: { costPrice: item.unitCost } });
+        await createBatch(tx, {
+          productId: item.productId,
+          supplierId: purchaseOrder.supplierId,
+          unitCost: item.unitCost,
+          quantity: item.quantity,
+          referenceType: 'ReceivingReport',
+          referenceId: created.id,
+          referenceNo: rrNumber,
+          receivedAt: created.receivedAt,
+        });
       }
 
       return tx.receivingReport.update({

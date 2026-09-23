@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { io } from 'socket.io-client';
 import {
   Package,
   Plus,
@@ -15,63 +16,29 @@ import {
   Loader2,
   Check,
   LayoutGrid,
-  Sprout, Leaf, Wheat, SprayCan, Wrench,
-  Pill, PaintBucket, ShoppingBag, Milk, Palette, Coffee,
-  Soup, Cylinder,
-  History, SlidersHorizontal
+  History, SlidersHorizontal, Inbox,
+  Users, Star, Scale, AlertTriangle, CheckCircle2
 } from 'lucide-react';
+import { CategoryIcon } from '../../utils/CategoryIcon';
 import PurchaseOrdersList from './PurchaseOrdersList';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
 import StockHistoryModal from './StockHistoryModal';
 import AdjustStockModal from './AdjustStockModal';
 
-import { apiFetch } from '../../auth/apiFetch';
+import { apiFetch, getAuthToken } from '../../auth/apiFetch';
 import { useAuth } from '../../auth/AuthContext';
 import { buildInventorySheets } from '../../utils/inventorySheets';
 import { exportToExcel } from '../../utils/exportExcel';
 
 const API_BASE_URL = 'http://localhost:5000/api';
+const SOCKET_SERVER_URL = 'http://localhost:5000';
 
 // Surface the server's own error message (e.g. "Barcode ... is already used by ...") instead of a bare status.
 const throwApiError = async (response) => {
   const body = await response.json().catch(() => ({}));
   throw new Error(body.error || `HTTP error status ${response.status}`);
 };
-
-// Same category -> icon mapping as cashierPOS.jsx, so a product shows the
-// identical glyph whether viewed at the register or in inventory.
-const CATEGORY_ICONS = {
-  seeds: Sprout,
-  fertilizers: Leaf,
-  feeds: Wheat,
-  pesticides: SprayCan,
-  tools: Wrench,
-  hardware: Wrench,
-  medicine: Pill,
-  pharmacy: Pill,
-  paint: PaintBucket,
-  paints: Palette,
-  grocery: ShoppingBag,
-  dairy: Milk,
-  bakery: Wheat,
-  snacks: ShoppingBag,
-  beverages: Coffee,
-  household: SprayCan,
-  pantry: Soup,
-  'canned goods': Cylinder,
-};
-
-const getCategoryIcon = (category) => {
-  if (!category) return Package;
-  return CATEGORY_ICONS[category.toLowerCase()] || Package;
-};
-
-function CategoryIcon({ category, className }) {
-  const Icon = getCategoryIcon(category);
-  // eslint-disable-next-line react-hooks/static-components
-  return <Icon className={className} />;
-}
 
 // Helper function to handle property name mismatches from the backend
 const getStockValue = (product) => {
@@ -88,6 +55,22 @@ export default function InventorySystem() {
 
   useEffect(() => {
     fetchInitialData();
+  }, []);
+
+  // Live stock updates (sales, receiving reports, purchase returns, manual add/adjust) — patches
+  // the affected rows in place, or appends a brand-new product (e.g. created via a receiving
+  // report), so the list stays current without the user needing to refresh.
+  useEffect(() => {
+    const socket = io(SOCKET_SERVER_URL, { auth: { token: getAuthToken() } });
+    socket.on('stock_updated', ({ products: changedProducts }) => {
+      if (!Array.isArray(changedProducts) || changedProducts.length === 0) return;
+      setProducts((prev) => {
+        const byId = new Map(prev.map((p) => [p.id, p]));
+        for (const p of changedProducts) byId.set(p.id, p);
+        return [...byId.values()];
+      });
+    });
+    return () => socket.disconnect();
   }, []);
 
   const fetchInitialData = async () => {
@@ -181,6 +164,42 @@ export default function InventorySystem() {
             <BarChart3 className="w-4 h-4" />
             <span>Supplier Reports</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('ledger')}
+            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+              activeTab === 'ledger'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>Ledger / History</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('members')}
+            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+              activeTab === 'members'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Members</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('reconciliation')}
+            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+              activeTab === 'reconciliation'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Scale className="w-4 h-4" />
+            <span>Reconciliation</span>
+          </button>
         </div>
       </header>
 
@@ -203,6 +222,12 @@ export default function InventorySystem() {
             exportToExcel={exportToExcel}
           />
         )}
+
+        {activeTab === 'ledger' && <LedgerReportPage exportToExcel={exportToExcel} />}
+
+        {activeTab === 'members' && <MembersPage />}
+
+        {activeTab === 'reconciliation' && <ReconciliationPage exportToExcel={exportToExcel} />}
       </div>
     </>
   );
@@ -903,7 +928,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-right">
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
                         <span className="w-1.5 h-1.5 rounded-full bg-current" />
                         {statusText}
@@ -1091,6 +1116,21 @@ function MinStockEditor({ product, onUpdated }) {
 // ==========================================
 function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [supplierMenuOpen, setSupplierMenuOpen] = useState(false);
+  const supplierMenuRef = useRef(null);
+
+  // Close the supplier dropdown when clicking outside of it
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (supplierMenuRef.current && !supplierMenuRef.current.contains(e.target)) {
+        setSupplierMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedSupplier = suppliers.find((s) => s.id === Number(selectedSupplierId));
 
   const supplierProducts = useMemo(() => {
     if (!selectedSupplierId) return [];
@@ -1122,24 +1162,58 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
+        {/* z-20 so the dropdown (which visually overflows into the card below) always wins the
+            stacking tie against the results card's own z-10 header — same reasoning as the category
+            filter above the Product List. */}
+        <div className="relative z-20 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="w-full md:w-96">
             <label className="block text-xs font-bold text-blue-600 uppercase tracking-wide mb-1.5">
               Select Supplier for Report
             </label>
-            <div className="relative">
-              <select
-                value={selectedSupplierId}
-                onChange={(e) => setSelectedSupplierId(e.target.value)}
-                className="w-full bg-white border border-slate-200/80 shadow-sm rounded-2xl pl-4 pr-9 py-3 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-400 transition-all appearance-none"
+            <div className="relative" ref={supplierMenuRef}>
+              <button
+                type="button"
+                onClick={() => setSupplierMenuOpen((o) => !o)}
+                className="w-full flex items-center gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-800 pl-4 pr-3 py-3 rounded-2xl text-sm font-semibold hover:border-blue-300 transition-colors cursor-pointer"
               >
-                <option value="">-- Choose Supplier --</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-blue-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Truck className="w-4 h-4 text-blue-500 shrink-0" />
+                <span className="flex-1 text-left truncate">{selectedSupplier ? selectedSupplier.name : '-- Choose Supplier --'}</span>
+                <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${supplierMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {supplierMenuOpen && (
+                <div className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1.5 max-h-64 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedSupplierId(''); setSupplierMenuOpen(false); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${!selectedSupplierId ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    <span className="flex-1 text-left">-- Choose Supplier --</span>
+                    {!selectedSupplierId && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  {suppliers.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-slate-400">No suppliers yet</p>
+                  ) : (
+                    suppliers.map((s) => {
+                      const active = Number(selectedSupplierId) === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => { setSelectedSupplierId(String(s.id)); setSupplierMenuOpen(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          <Truck className="w-3.5 h-3.5 shrink-0" />
+                          <span className="flex-1 text-left truncate">{s.name}</span>
+                          {active && <Check className="w-3.5 h-3.5 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1169,8 +1243,16 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
           <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">{supplierProducts.length} items found</span>
         </div>
 
-        <div className="relative z-10 overflow-x-auto">
-          <table className="w-full text-left text-xs">
+        <div className="relative z-10 overflow-y-auto overflow-x-hidden">
+          <table className="w-full table-fixed text-left text-xs">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[15%]" />
+              <col className="w-[12%]" />
+              <col className="w-[15%]" />
+              <col className="w-[15%]" />
+              <col className="w-[13%]" />
+            </colgroup>
             <thead>
               <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[11px] tracking-wider font-extrabold">
                 <th className="px-4 py-3.5">Product Name</th>
@@ -1192,10 +1274,10 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
                           <div className="w-8 h-8 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
                             <CategoryIcon category={p.category} className="w-4 h-4" />
                           </div>
-                          <span className="font-semibold text-slate-900">{p.name}</span>
+                          <span className="font-semibold text-slate-900 break-words">{p.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5">{p.category}</td>
+                      <td className="px-4 py-3.5 break-words">{p.category}</td>
                       <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
                       <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
                       <td className="px-4 py-3.5 text-center font-semibold">₱{(stockVal * Number(p.unitCost || 0)).toFixed(2)}</td>
@@ -1214,6 +1296,735 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+const LEDGER_PAGE_SIZE = 100;
+const LEDGER_TYPE_LABELS = {
+  OPENING: 'Opening balance',
+  PURCHASE_RECEIPT: 'Received',
+  MANUAL_ADD: 'Stock added',
+  SALE: 'Sale',
+  PURCHASE_RETURN: 'Pull-out (return)',
+  ADJUSTMENT: 'Adjustment',
+};
+const ledgerPeso = (n) => `₱${Number(n).toFixed(2)}`;
+
+// All-products Subsidiary Ledger / History Report — every stock movement (sales, receiving reports,
+// pull-outs, adjustments, opening stock) across every product, in one place, with each row's
+// transaction/reference number. Reuses the same /api/stock-movements endpoint the per-product Stock
+// History modal is built on, just without a productId filter.
+function LedgerReportPage({ exportToExcel }) {
+  const [movements, setMovements] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+
+  const applyPage = (rows, before) => {
+    setMovements((prev) => (before ? [...prev, ...rows] : rows));
+    setHasMore(rows.length === LEDGER_PAGE_SIZE);
+  };
+
+  const fetchPage = useCallback(
+    async (before) => {
+      const query = new URLSearchParams({ limit: String(LEDGER_PAGE_SIZE) });
+      if (before) query.set('before', String(before));
+      if (fromDate) query.set('from', fromDate);
+      if (toDate) query.set('to', toDate);
+      if (typeFilter) query.set('type', typeFilter);
+      const res = await apiFetch(`${API_BASE_URL}/stock-movements?${query}`);
+      if (!res.ok) throw new Error('Failed to load the ledger');
+      return res.json();
+    },
+    [fromDate, toDate, typeFilter]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    fetchPage()
+      .then((rows) => {
+        if (!cancelled) applyPage(rows);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchPage]);
+
+  const loadOlder = async () => {
+    const before = movements[movements.length - 1].id;
+    setIsLoading(true);
+    setError(null);
+    try {
+      applyPage(await fetchPage(before), before);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const query = new URLSearchParams();
+      if (fromDate) query.set('from', fromDate);
+      if (toDate) query.set('to', toDate);
+      if (typeFilter) query.set('type', typeFilter);
+      const res = await apiFetch(`${API_BASE_URL}/stock-movements/export?${query}`);
+      if (!res.ok) throw new Error('Failed to export the ledger');
+      const rows = (await res.json()).map((m) => ({
+        'When': new Date(m.createdAt).toLocaleString(),
+        'Product': m.product?.name || '',
+        'Barcode': m.product?.barcode || '',
+        'Type': LEDGER_TYPE_LABELS[m.type] || m.type,
+        'Change': m.quantity,
+        'Balance After': m.balanceAfter,
+        'Amount (₱)': m.amount != null ? Number(m.amount).toFixed(2) : '',
+        'Reference': m.referenceNo || '',
+        'PO Number': m.poNumber || '',
+        'Reason': m.reason || '',
+        'By': m.user?.username || '',
+      }));
+      await exportToExcel(rows, 'Ledger_History_Report');
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              max={toDate || undefined}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              min={fromDate || undefined}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Movement Type</label>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            >
+              <option value="">All types</option>
+              {Object.entries(LEDGER_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+          {(fromDate || toDate || typeFilter) && (
+            <button
+              type="button"
+              onClick={() => { setFromDate(''); setToDate(''); setTypeFilter(''); }}
+              className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer mb-0.5"
+            >
+              Clear filters
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="ml-auto flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+            <span>Export</span>
+          </button>
+        </div>
+      </div>
+
+      {exportError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">{exportError}</div>
+      )}
+
+      <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
+        <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+              <History className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Every stock movement, across all products</h2>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto overflow-y-auto max-h-[700px]">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+              <tr>
+                <th className="px-4 py-3">When</th>
+                <th className="px-4 py-3">Product</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3 text-center">Change</th>
+                <th className="px-4 py-3 text-center">Balance</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3">Reference</th>
+                <th className="px-4 py-3">By</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {error && (
+                <tr>
+                  <td colSpan="8" className="px-4 py-6 text-center text-rose-600 font-semibold">{error}</td>
+                </tr>
+              )}
+              {!isLoading && !error && movements.length === 0 && (
+                <tr>
+                  <td colSpan="8" className="px-4 py-10 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <Inbox className="w-6 h-6" />
+                      <span>No stock movements match these filters.</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {movements.map((m) => (
+                <tr key={m.id}>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(m.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-800">{m.product?.name}</p>
+                    <p className="text-[10px] text-slate-400 font-mono">{m.product?.barcode}</p>
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap">{LEDGER_TYPE_LABELS[m.type] || m.type}</td>
+                  <td className={`px-4 py-3 text-center font-black ${m.quantity > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
+                  </td>
+                  <td className="px-4 py-3 text-center font-bold text-slate-900">{m.balanceAfter}</td>
+                  <td className="px-4 py-3 text-right text-slate-700 font-semibold whitespace-nowrap">
+                    {m.amount != null ? ledgerPeso(m.amount) : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">
+                    {m.referenceNo && <span className="font-mono text-slate-700">{m.referenceNo}</span>}
+                    {m.poNumber && <span className="text-slate-400"> ({m.poNumber})</span>}
+                    {m.referenceNo && m.reason ? ' — ' : ''}
+                    {m.reason}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">{m.user?.username || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {isLoading && (
+          <div className="flex items-center justify-center gap-2 py-6 text-slate-400 text-xs">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+          </div>
+        )}
+        {!isLoading && hasMore && (
+          <div className="flex justify-center py-4">
+            <button
+              type="button"
+              onClick={loadOlder}
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-50 transition cursor-pointer"
+            >
+              Load older
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Admin-side Balik Tangkilik Members page: a searchable list on the left, and the selected
+// member's points-earning ledger on the right. Registration itself stays POS-only (it happens
+// inline at checkout) — this page is read-only.
+function MembersPage() {
+  const [members, setMembers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
+  const [selectedMember, setSelectedMember] = useState(null);
+
+  const [history, setHistory] = useState([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    apiFetch(`${API_BASE_URL}/members`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load members');
+        return res.json();
+      })
+      .then((rows) => {
+        if (!cancelled) setMembers(rows);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMember) return;
+    let cancelled = false;
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    apiFetch(`${API_BASE_URL}/members/${selectedMember.id}/points-history`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load points history');
+        return res.json();
+      })
+      .then((rows) => {
+        if (!cancelled) setHistory(rows);
+      })
+      .catch((err) => {
+        if (!cancelled) setHistoryError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMember]);
+
+  const filteredMembers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) => m.name.toLowerCase().includes(q) || m.cardNumber.includes(q));
+  }, [members, search]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,320px)_1fr] gap-6 items-start">
+      {/* Member list */}
+      <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by name or card number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+            />
+          </div>
+        </div>
+        <div className="max-h-[640px] overflow-y-auto divide-y divide-slate-100">
+          {isLoading && (
+            <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-xs">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading members...
+            </div>
+          )}
+          {error && <div className="p-4 text-rose-600 text-xs font-semibold">{error}</div>}
+          {!isLoading && !error && filteredMembers.length === 0 && (
+            <div className="flex flex-col items-center gap-2 py-10 text-slate-400 text-xs">
+              <Inbox className="w-6 h-6" />
+              <span>No members {search ? 'match your search' : 'registered yet'}.</span>
+            </div>
+          )}
+          {filteredMembers.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setSelectedMember(m)}
+              className={`w-full flex items-center justify-between gap-2 p-4 text-left transition-colors cursor-pointer ${
+                selectedMember?.id === m.id ? 'bg-indigo-50' : 'hover:bg-slate-50'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-800 truncate">{m.name}</div>
+                <div className="text-[10px] text-slate-400 font-mono">Card #{m.cardNumber}</div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0 text-amber-500 font-black text-xs">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                {Number(m.points).toFixed(2)}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Selected member detail + points history */}
+      <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm overflow-hidden">
+        {!selectedMember ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-24 text-slate-400 text-xs">
+            <Users className="w-8 h-8" />
+            <span>Select a member to see their points history.</span>
+          </div>
+        ) : (
+          <>
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-sm shadow-blue-500/30 shrink-0">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-black text-slate-800 truncate">{selectedMember.name}</h2>
+                  <p className="text-[11px] text-slate-500 font-semibold">
+                    Card #{selectedMember.cardNumber}
+                    {selectedMember.phone ? ` — ${selectedMember.phone}` : ''}
+                    {selectedMember.address ? ` — ${selectedMember.address}` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 bg-amber-50 text-amber-600 font-black text-sm px-3 py-1.5 rounded-full shrink-0">
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                {Number(selectedMember.points).toFixed(2)} pts
+              </div>
+            </div>
+
+            <div className="overflow-x-auto overflow-y-auto max-h-[560px]">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3">When</th>
+                    <th className="px-4 py-3">Transaction</th>
+                    <th className="px-4 py-3 text-right">Amount Paid</th>
+                    <th className="px-4 py-3 text-center">Points Earned</th>
+                    <th className="px-4 py-3 text-center">Balance After</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {isHistoryLoading && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
+                        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
+                      </td>
+                    </tr>
+                  )}
+                  {historyError && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-6 text-center text-rose-600 font-semibold">{historyError}</td>
+                    </tr>
+                  )}
+                  {!isHistoryLoading && !historyError && history.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
+                        <div className="flex flex-col items-center gap-2">
+                          <Inbox className="w-6 h-6" />
+                          <span>No points earned yet.</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {history.map((h) => (
+                    <tr key={h.id}>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(h.createdAt).toLocaleString()}</td>
+                      <td className="px-4 py-3 font-mono text-slate-700">{h.transaction?.transactionNo || '—'}</td>
+                      <td className="px-4 py-3 text-right text-slate-700 font-semibold whitespace-nowrap">
+                        {h.transaction ? ledgerPeso(h.transaction.totalAmount) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center font-black text-emerald-600">+{Number(h.points).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-center font-bold text-slate-900">{Number(h.balanceAfter).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Stock & sales reconciliation report (Phase 5) — cross-checks the ledger's own math against
+// itself (and against live stock) per product, plus the POS's reported sales totals against the
+// revenue its own SALE ledger rows carry. Read-only, always recomputed live from the ledger.
+const RECONCILIATION_FLOOR_DATE = '2026-08-01'; // mirrors ReconciliationReportModel.FLOOR_DATE
+
+function ReconciliationPage({ exportToExcel }) {
+  const [fromDate, setFromDate] = useState(RECONCILIATION_FLOOR_DATE);
+  const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
+  const [report, setReport] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showAllRows, setShowAllRows] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    const query = new URLSearchParams({ from: fromDate, to: toDate });
+    apiFetch(`${API_BASE_URL}/reconciliation-report?${query}`)
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || 'Failed to build the reconciliation report');
+        return body;
+      })
+      .then((body) => {
+        if (!cancelled) setReport(body);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromDate, toDate]);
+
+  const visibleRows = useMemo(() => {
+    if (!report) return [];
+    return showAllRows ? report.stock.rows : report.stock.rows.filter((r) => r.mismatch);
+  }, [report, showAllRows]);
+
+  const handleExport = async () => {
+    if (!report) return;
+    setIsExporting(true);
+    try {
+      const stockRows = report.stock.rows.map((r) => ({
+        'Product': r.name,
+        'Barcode': r.barcode || '',
+        'Opening': r.openingStock,
+        'Received': r.received,
+        'Manual Add': r.manualAdd,
+        'Returned': r.returned,
+        'Sold': r.sold,
+        'Adjustment': r.adjustment,
+        'Expected Closing': r.expectedClosing,
+        'Actual Closing': r.actualClosing,
+        'Mismatch': r.mismatch ? 'YES' : '',
+      }));
+      const salesRows = [
+        {
+          'From': report.from,
+          'To': report.to,
+          'Transactions': report.sales.transactionCount,
+          'POS Gross Sales (₱)': report.sales.posGrossSales.toFixed(2),
+          'POS Discounts (₱)': report.sales.posDiscounts.toFixed(2),
+          'POS Net Sales (₱)': report.sales.posNetSales.toFixed(2),
+          'Ledger Sale Revenue (₱)': report.sales.ledgerSaleRevenue.toFixed(2),
+          'Mismatch': report.sales.mismatch ? 'YES' : '',
+          'Transactions Without Movements': report.sales.transactionsWithoutMovements.length,
+        },
+      ];
+      await exportToExcel(null, `Reconciliation_${report.from}_to_${report.to}`, [
+        { name: 'Stock', rows: stockRows },
+        { name: 'Sales', rows: salesRows },
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              min={RECONCILIATION_FLOOR_DATE}
+              max={toDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <p className="text-[11px] text-slate-400 font-medium mb-2">
+            Can't start before {RECONCILIATION_FLOOR_DATE} — the historical May–July 2026 sales import has no stock ledger data before then.
+          </p>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting || !report}
+            className="ml-auto flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+            <span>Export</span>
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">{error}</div>
+      )}
+
+      {isLoading && (
+        <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-xs">
+          <Loader2 className="w-4 h-4 animate-spin" /> Building reconciliation report...
+        </div>
+      )}
+
+      {!isLoading && !error && report && (
+        <>
+          {/* Sales cross-check */}
+          <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Sales Cross-Check</h2>
+              <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                report.sales.mismatch ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
+              }`}>
+                {report.sales.mismatch ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                {report.sales.mismatch ? 'Mismatch found' : 'Reconciled'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-slate-400 font-semibold text-[10px] uppercase">Transactions</div>
+                <div className="text-slate-900 font-black text-sm mt-0.5">{report.sales.transactionCount}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-slate-400 font-semibold text-[10px] uppercase">POS Gross Sales</div>
+                <div className="text-slate-900 font-black text-sm mt-0.5">₱{report.sales.posGrossSales.toFixed(2)}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-slate-400 font-semibold text-[10px] uppercase">POS Net Sales</div>
+                <div className="text-slate-900 font-black text-sm mt-0.5">₱{report.sales.posNetSales.toFixed(2)}</div>
+              </div>
+              <div className={`rounded-xl p-3 ${report.sales.mismatch ? 'bg-rose-50' : 'bg-slate-50'}`}>
+                <div className="text-slate-400 font-semibold text-[10px] uppercase">Ledger Sale Revenue</div>
+                <div className={`font-black text-sm mt-0.5 ${report.sales.mismatch ? 'text-rose-600' : 'text-slate-900'}`}>
+                  ₱{report.sales.ledgerSaleRevenue.toFixed(2)}
+                </div>
+              </div>
+            </div>
+            {report.sales.transactionsWithoutMovements.length > 0 && (
+              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
+                <p className="font-bold mb-1">{report.sales.transactionsWithoutMovements.length} transaction(s) have no matching stock movements:</p>
+                <p className="font-mono">
+                  {report.sales.transactionsWithoutMovements.map((t) => t.transactionNo).join(', ')}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Stock math */}
+          <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
+            <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+                  <Scale className="w-4 h-4 text-white" />
+                </div>
+                <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                  Stock Reconciliation — {report.stock.mismatchCount} of {report.stock.rows.length} products mismatched
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllRows((v) => !v)}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
+              >
+                {showAllRows ? 'Show only mismatches' : 'Show all products'}
+              </button>
+            </div>
+
+            <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3">Product</th>
+                    <th className="px-4 py-3 text-center">Opening</th>
+                    <th className="px-4 py-3 text-center">Received</th>
+                    <th className="px-4 py-3 text-center">Returned</th>
+                    <th className="px-4 py-3 text-center">Sold</th>
+                    <th className="px-4 py-3 text-center">Adjusted</th>
+                    <th className="px-4 py-3 text-center">Expected</th>
+                    <th className="px-4 py-3 text-center">Actual</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleRows.length === 0 && (
+                    <tr>
+                      <td colSpan="9" className="px-4 py-10 text-center text-slate-400">
+                        <div className="flex flex-col items-center gap-2">
+                          {report.stock.mismatchCount === 0 ? (
+                            <>
+                              <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                              <span>Every product reconciles for this range.</span>
+                            </>
+                          ) : (
+                            <>
+                              <Inbox className="w-6 h-6" />
+                              <span>No products had stock activity in this range.</span>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {visibleRows.map((r) => (
+                    <tr key={r.productId} className={r.mismatch ? 'bg-rose-50/60' : undefined}>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-800">{r.name}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{r.barcode}</p>
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-700">{r.openingStock}</td>
+                      <td className="px-4 py-3 text-center text-emerald-600 font-semibold">{r.received + r.manualAdd > 0 ? `+${r.received + r.manualAdd}` : 0}</td>
+                      <td className="px-4 py-3 text-center text-rose-600 font-semibold">{r.returned > 0 ? `-${r.returned}` : 0}</td>
+                      <td className="px-4 py-3 text-center text-rose-600 font-semibold">{r.sold > 0 ? `-${r.sold}` : 0}</td>
+                      <td className={`px-4 py-3 text-center font-semibold ${r.adjustment > 0 ? 'text-emerald-600' : r.adjustment < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        {r.adjustment > 0 ? `+${r.adjustment}` : r.adjustment}
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-slate-900">{r.expectedClosing}</td>
+                      <td className="px-4 py-3 text-center font-bold text-slate-900">{r.actualClosing}</td>
+                      <td className="px-4 py-3">
+                        {r.mismatch ? (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-600 w-fit">
+                            <AlertTriangle className="w-3 h-3" /> Mismatch
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 w-fit">
+                            <CheckCircle2 className="w-3 h-3" /> OK
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

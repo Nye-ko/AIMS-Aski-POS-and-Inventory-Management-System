@@ -3,6 +3,8 @@ const { ProductModel, prisma } = require('./Product');
 const { verifyApproval, consumeApproval } = require('../services/posApproval');
 const { recordMovement } = require('./stockLedger');
 const { STORE_TIMEZONE, localDate } = require('./DemandForecast');
+const { MEMBER_DISCOUNT_PERCENT, computeEarnedPoints } = require('./Member');
+const { consumeFIFO } = require('./stockBatches');
 
 class CheckoutError extends Error {
   constructor(status, message, code = 'CHECKOUT_REJECTED') {
@@ -85,7 +87,7 @@ const TransactionModel = {
   // Prices, totals and the discount are recomputed here from the database — the
   // client only says which products, how many, and which discount % it was approved for.
   createCheckout: async (payload, io) => {
-    const { items, discountPercent, totalAmount: clientTotal, paymentMethod, cashierId, approvalToken } = payload;
+    const { items, discountPercent, totalAmount: clientTotal, paymentMethod, cashierId, approvalToken, memberId } = payload;
 
     // cashierId is set by the route handler from the authenticated user's
     // JWT (see authenticateToken in models/Auth.js) — verify it still
@@ -113,14 +115,26 @@ const TransactionModel = {
       quantities.set(productId, (quantities.get(productId) || 0) + quantity);
     }
 
-    const pct = Number(discountPercent || 0);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+    const requestedPct = Number(discountPercent || 0);
+    if (!Number.isFinite(requestedPct) || requestedPct < 0 || requestedPct > 100) {
       throw new CheckoutError(400, 'Discount must be between 0% and 100%.');
     }
     const approval =
-      pct > 0
-        ? await verifyApproval(approvalToken, { action: 'DISCOUNT', cashierId: validCashierId, discountPercent: pct })
+      requestedPct > 0
+        ? await verifyApproval(approvalToken, { action: 'DISCOUNT', cashierId: validCashierId, discountPercent: requestedPct })
         : null;
+
+    // A member's card is looked up here (not trusted from the client body) so it always reflects
+    // a real, still-existing member. The sale is still linked to the member (for their purchase
+    // history / future points) even when a supervisor discount is also in play — only the member's
+    // own 5% discount is skipped then, since it never stacks with a supervisor discount.
+    let member = null;
+    const validMemberId = Number(memberId);
+    if (Number.isInteger(validMemberId) && validMemberId > 0) {
+      member = await prisma.member.findUnique({ where: { id: validMemberId } });
+      if (!member) throw new CheckoutError(400, 'Member no longer exists.', 'MEMBER_NOT_FOUND');
+    }
+    const pct = requestedPct > 0 ? requestedPct : member ? MEMBER_DISCOUNT_PERCENT : 0;
 
     const { transaction, stockUpdates } = await prisma.$transaction(async (tx) => {
       const products = await tx.product.findMany({ where: { id: { in: [...quantities.keys()] } } });
@@ -174,6 +188,7 @@ const TransactionModel = {
           totalAmount: totalCents / 100,
           paymentMethod: method,
           cashierId: validCashierId,
+          memberId: member ? member.id : null,
           items: {
             create: lines.map(({ product, quantity, unitCents }) => ({
               productId: product.id,
@@ -188,13 +203,49 @@ const TransactionModel = {
         include: {
           items: true,
           cashier: { select: { username: true } },
+          member: { select: { cardNumber: true, name: true, points: true } },
         },
       });
+
+      // Balik Tangkilik points: earned on the amount actually paid (after whatever discount
+      // applied), whenever a member is attached — even if a supervisor discount, not the
+      // member's own, is what produced that amount. See computeEarnedPoints for the formula.
+      if (member) {
+        const earnedPoints = computeEarnedPoints(totalCents / 100);
+        if (earnedPoints > 0) {
+          const updatedMember = await tx.member.update({
+            where: { id: member.id },
+            data: { points: { increment: earnedPoints } },
+          });
+          await tx.memberPointsLedger.create({
+            data: {
+              memberId: member.id,
+              transactionId: newTx.id,
+              points: earnedPoints,
+              balanceAfter: updatedMember.points,
+            },
+          });
+          newTx.member.points = updatedMember.points;
+        }
+      }
 
       // Capture post-sale stock so the caller can detect low-stock crossings for email alerts.
       const after = await tx.product.findMany({ where: { id: { in: lines.map((l) => l.product.id) } } });
       const afterById = new Map(after.map((p) => [p.id, p]));
+      const itemByProductId = new Map(newTx.items.map((i) => [i.productId, i]));
       for (const { product, quantity } of lines) {
+        // FIFO: this line's quantity is drawn from the product's oldest batches first, so COGS
+        // reflects what was actually sold, not just the product's latest received cost.
+        const consumed = await consumeFIFO(tx, product.id, quantity, product.costPrice);
+        await tx.transactionItemBatch.createMany({
+          data: consumed.map((c) => ({
+            transactionItemId: itemByProductId.get(product.id).id,
+            batchId: c.batchId,
+            quantity: c.quantity,
+            unitCost: c.unitCost,
+          })),
+        });
+
         await recordMovement(tx, {
           productId: product.id,
           type: 'SALE',
@@ -226,6 +277,8 @@ const TransactionModel = {
 
     if (io) {
       io.to('dashboard').emit('transaction_created', transaction);
+      const changedProducts = await ProductModel.findManyFormatted(stockUpdates.map((s) => s.id));
+      io.to('dashboard').emit('stock_updated', { products: changedProducts });
     }
 
     // Attach stockUpdates onto the returned object as a non-enumerable property

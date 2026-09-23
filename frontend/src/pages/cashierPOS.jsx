@@ -3,53 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, Trash2, ChevronDown, Plus, Minus,
   Lock, Clock, Banknote, X, Percent, Download, ShieldCheck,
-  Check, LayoutGrid, Sprout, Leaf, Wheat, SprayCan, Wrench,
-  Pill, PaintBucket, Package, ShoppingCart,
-  Wallet, LogOut, KeyRound, ShoppingBag, Milk, Palette, Coffee,
-  Soup, Cylinder, CheckCircle2
+  Check, LayoutGrid, Package, ShoppingCart,
+  Wallet, LogOut, KeyRound, CheckCircle2,
+  UserPlus, UserCheck, UserX, Printer, Receipt
 } from 'lucide-react';
+import { CategoryIcon } from '../utils/CategoryIcon';
 import { exportCsv } from '../utils/exportCsv';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch } from '../auth/apiFetch';
 import ChangePasswordModal from '../auth/ChangePasswordModal';
 
-// Maps a product/category name to a distinct, representative lucide icon
-// for the dropdown menu and product card placeholders — every category
-// gets its own glyph (no repeated generic box/basket icon) — falls back
-// to a generic box icon only for categories we truly don't recognize.
-const CATEGORY_ICONS = {
-  seeds: Sprout,
-  fertilizers: Leaf,
-  feeds: Wheat,
-  pesticides: SprayCan,
-  tools: Wrench,
-  hardware: Wrench,
-  medicine: Pill,
-  pharmacy: Pill,
-  paint: PaintBucket,
-  paints: Palette,
-  grocery: ShoppingBag,
-  dairy: Milk,
-  bakery: Wheat,
-  snacks: ShoppingBag,
-  beverages: Coffee,
-  household: SprayCan,
-  pantry: Soup,
-  'canned goods': Cylinder,
-};
-
-const getCategoryIcon = (category) => {
-  if (!category) return Package;
-  return CATEGORY_ICONS[category.toLowerCase()] || Package;
-};
-
-function CategoryIcon({ category, className }) {
-  const Icon = getCategoryIcon(category);
-  // Icon is always one of the stable lucide component refs in CATEGORY_ICONS
-  // (or Package) — not a new component identity per render.
-  // eslint-disable-next-line react-hooks/static-components
-  return <Icon className={className} />;
-}
+// Mirrors MemberModel.MEMBER_DISCOUNT_PERCENT on the backend, purely for the live cart preview —
+// the server always recomputes and enforces the actual discount at checkout.
+const MEMBER_DISCOUNT_PERCENT = 5;
 
 const STAT_COLORS = {
   indigo: { card: "bg-blue-50/50 border-l-4 border-blue-500", badge: "bg-blue-100 text-blue-600" },
@@ -60,13 +26,13 @@ const STAT_COLORS = {
 
 function StatCard({ icon: Icon, color, label, value }) {
   return (
-    <div className={`rounded-2xl shadow-md shadow-slate-200/60 p-4 flex items-center gap-3 ${STAT_COLORS[color].card}`}>
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${STAT_COLORS[color].badge}`}>
-        <Icon className="w-5 h-5" />
+    <div className={`rounded-xl shadow-sm shadow-slate-200/60 p-2.5 flex items-center gap-2.5 ${STAT_COLORS[color].card}`}>
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${STAT_COLORS[color].badge}`}>
+        <Icon className="w-4 h-4" />
       </div>
       <div className="min-w-0">
-        <div className="text-lg font-extrabold text-slate-900 truncate">{value}</div>
-        <div className="text-[11px] text-slate-400 font-medium truncate">{label}</div>
+        <div className="text-sm font-extrabold text-slate-900 truncate">{value}</div>
+        <div className="text-[10px] text-slate-400 font-medium truncate">{label}</div>
       </div>
     </div>
   );
@@ -150,6 +116,20 @@ export default function CashierPOS() {
   const [tempDiscountAmount, setTempDiscountAmount] = useState(0);
   const [discountError, setDiscountError] = useState("");
 
+  // FEATURE: Balik Tangkilik member — attaching one gives a flat 5% discount, unless a
+  // supervisor discount is already applied (the two never stack; the server enforces this too).
+  const [member, setMember] = useState(null); // { id, cardNumber, name } once attached to the sale
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberResults, setMemberResults] = useState([]);
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+  const [showMemberRegisterForm, setShowMemberRegisterForm] = useState(false);
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberPhone, setNewMemberPhone] = useState("");
+  const [newMemberAddress, setNewMemberAddress] = useState("");
+  const [memberError, setMemberError] = useState("");
+  const [isSavingMember, setIsSavingMember] = useState(false);
+
   // FEATURE 2: Pending Transactions States
   const [pendingSales, setPendingSales] = useState([]);
   const [showPendingModal, setShowPendingModal] = useState(false);
@@ -168,6 +148,15 @@ export default function CashierPOS() {
     p1000: 0, p500: 0, p200: 0, p100: 0, p50: 0,
     p20: 0, p10: 0, p5: 0, p1: 0, c25: 0
   });
+
+  // FEATURE: Z-Reading — supervisor-gated, printed sales report closing out this cashier's
+  // shift since their last one (gross/discount/net, category + payment totals, grand total).
+  const [showZReadAuthModal, setShowZReadAuthModal] = useState(false);
+  const [zReadSupervisorPin, setZReadSupervisorPin] = useState("");
+  const [zReadAuthError, setZReadAuthError] = useState("");
+  const [isProcessingZRead, setIsProcessingZRead] = useState(false);
+  const [zReadResult, setZReadResult] = useState(null);
+  const [showZReadResultModal, setShowZReadResultModal] = useState(false);
 
   // Exchanges a supervisor PIN for a short-lived approval token (the PIN itself is never stored client-side).
   const requestApproval = async (body) => {
@@ -226,7 +215,9 @@ export default function CashierPOS() {
 
   // DERIVED CALCULATIONS FOR CART
   const subtotal = cart.reduce((sum, item) => sum + (Number(item.unitPrice) * item.quantity), 0);
-  const discountAmount = (subtotal * discountPercent) / 100;
+  // A supervisor discount always takes precedence — the member discount only applies when none is set.
+  const effectiveDiscountPercent = discountPercent > 0 ? discountPercent : (member ? MEMBER_DISCOUNT_PERCENT : 0);
+  const discountAmount = (subtotal * effectiveDiscountPercent) / 100;
   const cartTotal = Math.max(0, subtotal - discountAmount);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -322,6 +313,67 @@ export default function CashierPOS() {
     setCart([]);
     setDiscountPercent(0);
     setDiscountApproval(null);
+    setMember(null);
+  };
+
+  // FEATURE: Balik Tangkilik member lookup/registration modal
+  const handleOpenMemberModal = () => {
+    setMemberSearch("");
+    setMemberResults([]);
+    setShowMemberRegisterForm(false);
+    setNewMemberName("");
+    setNewMemberPhone("");
+    setNewMemberAddress("");
+    setMemberError("");
+    setShowMemberModal(true);
+  };
+
+  const handleMemberSearch = async (query) => {
+    setMemberSearch(query);
+    if (!query.trim()) {
+      setMemberResults([]);
+      return;
+    }
+    setMemberSearchLoading(true);
+    try {
+      const res = await apiFetch(`http://localhost:5000/api/members?search=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error('Failed to search members');
+      setMemberResults(await res.json());
+    } catch (err) {
+      console.error('Member search error:', err);
+    } finally {
+      setMemberSearchLoading(false);
+    }
+  };
+
+  const handleSelectMember = (m) => {
+    setMember(m);
+    setShowMemberModal(false);
+  };
+
+  const handleRemoveMember = () => setMember(null);
+
+  const handleRegisterMember = async () => {
+    if (!newMemberName.trim()) {
+      setMemberError("Member name is required.");
+      return;
+    }
+    setIsSavingMember(true);
+    setMemberError("");
+    try {
+      const res = await apiFetch('http://localhost:5000/api/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newMemberName, phone: newMemberPhone, address: newMemberAddress }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to register member.');
+      handleSelectMember(data);
+    } catch (err) {
+      setMemberError(err.message);
+    } finally {
+      setIsSavingMember(false);
+    }
   };
 
   // FEATURE 1: Discount Modal — opening syncs both fields to the currently applied discount
@@ -391,6 +443,7 @@ export default function CashierPOS() {
       cart: [...cart],
       discountPercent,
       discountApproval,
+      member,
       total: cartTotal
     };
     setPendingSales((prev) => [...prev, newPendingOrder]);
@@ -401,6 +454,7 @@ export default function CashierPOS() {
     setCart(pendingOrder.cart);
     setDiscountPercent(pendingOrder.discountPercent);
     setDiscountApproval(pendingOrder.discountApproval || null);
+    setMember(pendingOrder.member || null);
     setPendingSales((prev) => prev.filter((o) => o.id !== pendingOrder.id));
     setShowPendingModal(false);
   };
@@ -417,7 +471,8 @@ const handleConfirmSale = async () => {
     (sum, item) => sum + Number(item.unitPrice) * item.quantity,
     0
   );
-  const currentDiscountAmount = (currentSubtotal * discountPercent) / 100;
+  const currentDiscountPercent = discountPercent > 0 ? discountPercent : (member ? MEMBER_DISCOUNT_PERCENT : 0);
+  const currentDiscountAmount = (currentSubtotal * currentDiscountPercent) / 100;
   const currentTotalAmount = Math.max(0, currentSubtotal - currentDiscountAmount);
 
   // Sanitize Enum value ("E-wallet" -> "E_WALLET")
@@ -437,6 +492,7 @@ const handleConfirmSale = async () => {
     totalAmount: Number(currentTotalAmount.toFixed(2)),
     paymentMethod: formattedPaymentMethod, // "CASH", "CARD", "E_WALLET"
     approvalToken: discountPercent > 0 ? discountApproval?.token : undefined,
+    memberId: member ? Number(member.id) : undefined,
   };
 
   try {
@@ -455,10 +511,11 @@ const handleConfirmSale = async () => {
       setLastSale({
         items: cart.map((item) => ({ ...item })),
         subtotal: Number(responseData.subtotal),
-        discountPercent,
+        discountPercent: currentDiscountPercent,
         discountAmount: Number(responseData.discountAmount),
         total: Number(responseData.totalAmount),
         paymentMethod,
+        member: responseData.member || null,
       });
       setShowSuccessModal(true);
 
@@ -605,6 +662,38 @@ const handleConfirmSale = async () => {
     }
   };
 
+  // FEATURE: Z-Reading — one supervisor PIN both authorizes and immediately triggers the
+  // closing report (unlike X-Reading/EOD, there's no separate unlocked screen to review first).
+  const handleOpenZReadModal = () => {
+    setZReadSupervisorPin("");
+    setZReadAuthError("");
+    setShowZReadAuthModal(true);
+  };
+
+  const handleRunZReading = async () => {
+    if (isProcessingZRead) return;
+    setIsProcessingZRead(true);
+    setZReadAuthError("");
+    try {
+      const approval = await requestApproval({ pin: zReadSupervisorPin, action: 'ZREAD' });
+      const res = await apiFetch('http://localhost:5000/api/pos/z-reading', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Approval-Token': approval.token },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to generate the Z-Reading.');
+
+      setZReadResult(data);
+      setShowZReadAuthModal(false);
+      setZReadSupervisorPin("");
+      setShowZReadResultModal(true);
+    } catch (err) {
+      setZReadAuthError(err.message);
+    } finally {
+      setIsProcessingZRead(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50/60 to-indigo-50/40 font-bold text-slate-500">
@@ -661,6 +750,14 @@ const handleConfirmSale = async () => {
             >
               <Banknote className="w-4 h-4" />
               <span className="hidden sm:inline">X-Reading / EOD</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenZReadModal}
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-blue-600 px-3 sm:px-3.5 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span className="hidden sm:inline">Z-Reading</span>
             </button>
             <button
               type="button"
@@ -776,12 +873,10 @@ const handleConfirmSale = async () => {
                   <div
                     key={product.id}
                     onClick={() => handleAddToCart(product)}
-                    className="aspect-square bg-white/90 rounded-2xl p-3 flex flex-col cursor-pointer border border-indigo-100/80 shadow-sm hover:border-blue-400 hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5 transition-all duration-200"
+                    className="bg-white/90 rounded-2xl p-2.5 flex flex-col cursor-pointer border border-indigo-100/80 shadow-sm hover:border-blue-400 hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5 transition-all duration-200"
                   >
-                    <div className="flex-1 min-h-0 bg-gradient-to-br from-blue-50 to-indigo-100/60 rounded-xl w-full flex items-center justify-center mb-2.5">
-                      <div className="bg-white/80 p-3 rounded-full shadow-sm">
-                        <CategoryIcon category={product.category} className="w-5 h-5 text-indigo-600" />
-                      </div>
+                    <div className="h-16 shrink-0 bg-indigo-50 rounded-xl w-full flex items-center justify-center mb-2">
+                      <CategoryIcon category={product.category} className="w-5 h-5 text-indigo-500" />
                     </div>
                     <div className="text-slate-800 font-medium text-xs shrink-0">
                       <div className="truncate font-semibold text-slate-900">{product.name}</div>
@@ -817,25 +912,42 @@ const handleConfirmSale = async () => {
                 <div className="relative w-11 h-11 shrink-0">
                   <div
                     className="absolute inset-0 rounded-full"
-                    style={{ background: `conic-gradient(#22d3ee ${Math.min(100, discountPercent) * 3.6}deg, rgba(255,255,255,0.15) 0deg)` }}
+                    style={{ background: `conic-gradient(#22d3ee ${Math.min(100, effectiveDiscountPercent) * 3.6}deg, rgba(255,255,255,0.15) 0deg)` }}
                   />
                   <div className="absolute inset-[4px] bg-[#0B132B] rounded-full flex items-center justify-center">
-                    <span className="text-[10px] font-bold text-cyan-300">{discountPercent}%</span>
+                    <span className="text-[10px] font-bold text-cyan-300">{effectiveDiscountPercent}%</span>
                   </div>
                 </div>
               </div>
 
-              <button
-                onClick={handleOpenDiscountModal}
-                className="relative z-10 mt-2 w-full flex items-center justify-center gap-1.5 bg-white/10 hover:bg-white/20 rounded-full py-1.5 text-[11px] font-bold transition-colors cursor-pointer backdrop-blur-sm"
-              >
-                <Percent className="w-3 h-3 text-cyan-300" />
-                {discountPercent > 0 ? "Change Discount" : "Apply Supervisor Discount"}
-              </button>
+              <div className="relative z-10 mt-2 grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={handleOpenDiscountModal}
+                  className="flex items-center justify-center gap-1.5 bg-white/10 hover:bg-white/20 rounded-full py-1.5 text-[11px] font-bold transition-colors cursor-pointer backdrop-blur-sm"
+                >
+                  <Percent className="w-3 h-3 text-cyan-300" />
+                  {discountPercent > 0 ? "Change Discount" : "Discount"}
+                </button>
+                <button
+                  onClick={member ? handleRemoveMember : handleOpenMemberModal}
+                  className={`flex items-center justify-center gap-1.5 rounded-full py-1.5 text-[11px] font-bold transition-colors cursor-pointer backdrop-blur-sm ${member ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300" : "bg-white/10 hover:bg-white/20"}`}
+                >
+                  {member ? <UserX className="w-3 h-3" /> : <UserPlus className="w-3 h-3 text-cyan-300" />}
+                  {member ? "Remove Member" : "Member"}
+                </button>
+              </div>
 
-              {discountPercent > 0 && (
+              {member && (
+                <p className="relative z-10 text-[10px] text-cyan-300 font-semibold mt-1.5 text-center truncate">
+                  <UserCheck className="w-3 h-3 inline -mt-0.5 mr-1" />
+                  {member.name} · Card #{member.cardNumber}
+                  {member.points != null && ` · ${Number(member.points).toFixed(2)} pts`}
+                </p>
+              )}
+
+              {discountAmount > 0 && (
                 <p className="relative z-10 text-[10px] text-emerald-400 font-semibold mt-1.5 text-center">
-                  Discount applied: - PHP {discountAmount.toFixed(2)}
+                  {discountPercent > 0 ? "Discount" : "Member discount"} applied: - PHP {discountAmount.toFixed(2)}
                 </p>
               )}
 
@@ -1028,6 +1140,134 @@ const handleConfirmSale = async () => {
         </div>
       )}
 
+      {/* --- MODAL: BALIK TANGKILIK MEMBER LOOKUP / REGISTRATION --- */}
+      {showMemberModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm border border-slate-100 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-[#0B132B]" />
+                Balik Tangkilik Member
+              </h3>
+              <button onClick={() => setShowMemberModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {!showMemberRegisterForm ? (
+              <>
+                <div className="p-5 pb-3 shrink-0">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Search by name or card number..."
+                      value={memberSearch}
+                      onChange={(e) => handleMemberSearch(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-5 min-h-[120px]">
+                  {memberSearchLoading ? (
+                    <p className="text-center text-xs text-slate-400 py-6">Searching...</p>
+                  ) : memberSearch.trim() && memberResults.length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-6">No members match "{memberSearch}".</p>
+                  ) : (
+                    <div className="space-y-1.5 pb-2">
+                      {memberResults.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => handleSelectMember(m)}
+                          className="w-full flex items-center justify-between gap-2 p-2.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-left transition-colors cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-800 truncate">{m.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">Card #{m.cardNumber}</div>
+                          </div>
+                          <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-5 pt-3 border-t border-slate-100 shrink-0">
+                  <button
+                    onClick={() => { setShowMemberRegisterForm(true); setMemberError(""); }}
+                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Register New Member
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-5 space-y-3 overflow-y-auto">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={newMemberName}
+                      onChange={(e) => setNewMemberName(e.target.value)}
+                      placeholder="Juan Dela Cruz"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Phone</label>
+                    <input
+                      type="text"
+                      value={newMemberPhone}
+                      onChange={(e) => setNewMemberPhone(e.target.value)}
+                      placeholder="09XXXXXXXXX"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Address</label>
+                    <input
+                      type="text"
+                      value={newMemberAddress}
+                      onChange={(e) => setNewMemberAddress(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    A 6-digit Balik Tangkilik card number is assigned automatically.
+                  </p>
+                  {memberError && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-xs font-semibold">
+                      {memberError}
+                    </div>
+                  )}
+                </div>
+                <div className="p-5 border-t border-slate-100 shrink-0 flex gap-2">
+                  <button
+                    onClick={() => setShowMemberRegisterForm(false)}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleRegisterMember}
+                    disabled={isSavingMember}
+                    className="flex-1 py-2.5 disabled:opacity-60 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+                  >
+                    {isSavingMember ? 'Saving…' : 'Register & Attach'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* --- MODAL 2: PENDING SALES AREA --- */}
       {showPendingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
@@ -1120,6 +1360,149 @@ const handleConfirmSale = async () => {
                 className="px-4 py-2 disabled:opacity-60 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white font-bold text-xs rounded-full transition-all cursor-pointer"
               >
                 {isApproving ? 'Verifying…' : 'Unlock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: SUPERVISOR AUTHORIZATION GATE FOR Z-READING --- */}
+      {showZReadAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#0B132B]" />
+                Supervisor Authorization
+              </h3>
+              <button onClick={() => setShowZReadAuthModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-slate-500 font-medium">
+                Enter a supervisor PIN to close out and print this shift's Z-Reading. This covers
+                every sale since your last Z-Reading and can't be undone.
+              </p>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Supervisor PIN</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  placeholder="Enter supervisor PIN"
+                  value={zReadSupervisorPin}
+                  onChange={(e) => setZReadSupervisorPin(e.target.value.replace(/[^0-9]/g, ''))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRunZReading()}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                />
+              </div>
+
+              {zReadAuthError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-xs font-semibold">
+                  {zReadAuthError}
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setShowZReadAuthModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-full transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRunZReading}
+                disabled={isProcessingZRead}
+                className="px-4 py-2 disabled:opacity-60 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white font-bold text-xs rounded-full transition-all cursor-pointer"
+              >
+                {isProcessingZRead ? 'Printing…' : 'Authorize & Print'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Z-READING RESULT --- */}
+      {showZReadResultModal && zReadResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm border border-slate-100 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-[#0B132B]" />
+                Z-Reading {zReadResult.reportNo}
+              </h3>
+              <button onClick={() => setShowZReadResultModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 overflow-y-auto text-xs">
+              <p className="text-slate-400 font-medium">
+                Sent to the receipt printer. {zReadResult.transactionCount} transaction(s) covered.
+              </p>
+
+              <div className="bg-slate-50 rounded-xl p-3 space-y-1">
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Gross</span><span>PHP {Number(zReadResult.grossSales).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Points Availed</span><span>PHP {Number(zReadResult.pointsAvailed).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Total Discount</span><span>PHP {Number(zReadResult.totalDiscount).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-slate-900 font-bold pt-1 border-t border-slate-200">
+                  <span>Net</span><span>PHP {Number(zReadResult.netSales).toFixed(2)}</span>
+                </div>
+              </div>
+
+              {zReadResult.paymentBreakdown?.length > 0 && (
+                <div className="bg-slate-50 rounded-xl p-3 space-y-1">
+                  {zReadResult.paymentBreakdown.map((p) => (
+                    <div key={p.method} className="flex justify-between text-slate-600 font-semibold">
+                      <span>{p.count} &times; {p.method}</span><span>PHP {Number(p.amount).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {zReadResult.categoryBreakdown?.length > 0 && (
+                <div className="bg-slate-50 rounded-xl p-3 space-y-1">
+                  <p className="font-bold text-slate-700 mb-1">Category Total</p>
+                  {zReadResult.categoryBreakdown.map((c) => (
+                    <div key={c.category} className="flex justify-between text-slate-600 font-semibold">
+                      <span>{c.quantity} &times; {c.category}</span><span>PHP {Number(c.amount).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="bg-slate-50 rounded-xl p-3 space-y-1">
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Beginning Transaction</span><span className="font-mono">{zReadResult.beginTransactionNo || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between text-slate-500 font-medium">
+                  <span>Ending Transaction</span><span className="font-mono">{zReadResult.endTransactionNo || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between text-slate-500 font-medium pt-1 border-t border-slate-200">
+                  <span>Old Grand Total</span><span>PHP {Number(zReadResult.grandTotalBefore).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-slate-900 font-bold">
+                  <span>New Grand Total</span><span>PHP {Number(zReadResult.grandTotalAfter).toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-slate-100 shrink-0">
+              <button
+                onClick={() => setShowZReadResultModal(false)}
+                className="w-full py-2.5 bg-[#0B132B] hover:shadow-slate-900/30 shadow-lg text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+              >
+                Done
               </button>
             </div>
           </div>
@@ -1282,6 +1665,18 @@ const handleConfirmSale = async () => {
                   <span>Payment Method</span>
                   <span className="font-bold text-slate-800">{lastSale.paymentMethod}</span>
                 </div>
+                {lastSale.member && (
+                  <div className="flex justify-between text-slate-500 font-medium">
+                    <span>Member</span>
+                    <span className="font-bold text-slate-800">{lastSale.member.name} (#{lastSale.member.cardNumber})</span>
+                  </div>
+                )}
+                {lastSale.member && lastSale.member.points != null && (
+                  <div className="flex justify-between text-amber-600 font-semibold">
+                    <span>Points Balance</span>
+                    <span>{Number(lastSale.member.points).toFixed(2)} pts</span>
+                  </div>
+                )}
               </div>
             </div>
 

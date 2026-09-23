@@ -5,7 +5,7 @@ const { prisma } = require('../models/Product');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const TOKEN_TTL_SECONDS = { DISCOUNT: 10 * 60, XREAD: 15 * 60 };
+const TOKEN_TTL_SECONDS = { DISCOUNT: 10 * 60, XREAD: 15 * 60, ZREAD: 5 * 60 };
 const APPROVER_ROLES = ['SUPERVISOR', 'ADMIN'];
 const PIN_PATTERN = /^\d{4,6}$/;
 

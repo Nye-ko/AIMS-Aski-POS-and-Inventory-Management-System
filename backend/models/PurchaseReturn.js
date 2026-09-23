@@ -1,6 +1,7 @@
 const { prisma } = require('./Product');
 const { PurchasingError } = require('./PurchaseOrder');
 const { changeStock, StockError } = require('./stockLedger');
+const { consumeFromBatch, findBatchByReceivingReport } = require('./stockBatches');
 
 // PR-YYYYMMDD-#### — date-stamped, uniqueness guaranteed by the row's own id
 const generatePrNumber = (id, date) => {
@@ -117,6 +118,14 @@ const PurchaseReturnModel = {
       });
 
       const returnNo = generatePrNumber(created.id, created.createdAt);
+
+      // Each line already names exactly which delivery it's drawn from, so draw the returned
+      // quantity from that same batch first (falling back to FIFO across the product's other
+      // batches for whatever that one batch can't cover, e.g. if some of it was already sold).
+      for (const item of lineItems) {
+        const batch = await findBatchByReceivingReport(tx, item.productId, item.receivingReportId);
+        await consumeFromBatch(tx, batch?.id, item.quantity, item.productId, item.unitCost);
+      }
 
       // One stock movement per product, even when the same product was pulled from more than one
       // receiving report in this return — keeps each PURCHASE_RETURN ledger row's amount (attached by

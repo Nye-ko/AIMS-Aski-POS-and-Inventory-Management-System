@@ -141,7 +141,7 @@ export default function SalesReport() {
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-sm font-bold text-slate-800">{monthLabel(month)} — one row per transaction</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-y-auto overflow-x-hidden max-h-[700px]">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
               <tr>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { X, RotateCcw, Loader2, Inbox, ChevronLeft } from 'lucide-react';
+import { X, RotateCcw, Loader2, Inbox, ChevronLeft, Search } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
 import { apiFetch } from '../../auth/apiFetch';
@@ -57,7 +57,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
   const [items, setItems] = useState([]);
   const [reason, setReason] = useState(REASON_OPTIONS[0]);
-  const [remarks, setRemarks] = useState('');
+  const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -90,7 +90,7 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
   const openSupplier = async (supplier) => {
     setSelectedSupplier(supplier);
     setReason(REASON_OPTIONS[0]);
-    setRemarks('');
+    setSearch('');
     setFormError(null);
     setView('detail');
     setIsLoadingBatches(true);
@@ -111,15 +111,24 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
     setItems((prev) => prev.map((it) => (it.key !== key ? it : { ...it, ...patch })));
   };
 
+  // Narrows the supplier's delivered items to those matching the search (product name or barcode) —
+  // a return can only ever pull from stock this supplier actually delivered, so search never reaches
+  // outside this supplier's own receiving reports.
+  const filteredItems = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((it) => it.name.toLowerCase().includes(q) || (it.barcode || '').toLowerCase().includes(q));
+  }, [items, search]);
+
   // Batches (receiving reports) that actually have items, oldest first — a natural FIFO reading order.
   const batches = React.useMemo(() => {
     const byId = new Map();
-    for (const it of items) {
+    for (const it of filteredItems) {
       if (!byId.has(it.receivingReportId)) byId.set(it.receivingReportId, { id: it.receivingReportId, rrNumber: it.rrNumber, receivedAt: it.receivedAt, items: [] });
       byId.get(it.receivingReportId).items.push(it);
     }
     return [...byId.values()].sort((a, b) => new Date(a.receivedAt) - new Date(b.receivedAt));
-  }, [items]);
+  }, [filteredItems]);
 
   const handleCreateReturn = async () => {
     setFormError(null);
@@ -141,7 +150,6 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
           supplierId: selectedSupplier.id,
           items: eligibleItems,
           reason,
-          remarks,
         }),
       });
 
@@ -256,15 +264,17 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                     className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2 text-xs text-slate-500"
                   />
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Remarks</label>
-                  <textarea
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    rows={2}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs"
-                  />
-                </div>
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search this supplier's delivered items by name or barcode..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 transition-all"
+                />
               </div>
 
               {isLoadingBatches && (
@@ -276,7 +286,11 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
               {!isLoadingBatches && batches.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-sm gap-2">
                   <Inbox className="w-8 h-8" />
-                  <p>No receiving reports have been filed for this supplier yet.</p>
+                  <p>
+                    {items.length === 0
+                      ? 'No receiving reports have been filed for this supplier yet.'
+                      : 'No delivered items match your search.'}
+                  </p>
                 </div>
               )}
 

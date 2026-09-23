@@ -61,30 +61,61 @@ const loadAmounts = async (movements) => {
   return amountByKey;
 };
 
-const withAmounts = async (movements) => attachAmounts(movements, await loadAmounts(movements));
+// A received delivery's movement references its ReceivingReport (for the RR number/amount), but a
+// receiving report also belongs to exactly one Purchase Order — so the ledger can show both numbers
+// on one line (e.g. "RR-0012 (PO-0008)") without the movement itself needing a second reference column.
+const loadPoNumbers = async (movements) => {
+  const rrIds = [...new Set(movements.filter((m) => m.referenceType === 'ReceivingReport' && m.referenceId != null).map((m) => m.referenceId))];
+  if (rrIds.length === 0) return new Map();
+  const rrs = await prisma.receivingReport.findMany({
+    where: { id: { in: rrIds } },
+    select: { id: true, purchaseOrder: { select: { poNumber: true } } },
+  });
+  return new Map(rrs.map((rr) => [rr.id, rr.purchaseOrder?.poNumber || null]));
+};
+
+const attachPoNumbers = (movements, poNumberByRrId) =>
+  movements.map((m) => {
+    if (m.referenceType !== 'ReceivingReport' || m.referenceId == null) return m;
+    const poNumber = poNumberByRrId.get(m.referenceId);
+    return poNumber ? { ...m, poNumber } : m;
+  });
+
+const withExtras = async (movements) => {
+  const [amountByKey, poNumberByRrId] = await Promise.all([loadAmounts(movements), loadPoNumbers(movements)]);
+  return attachPoNumbers(attachAmounts(movements, amountByKey), poNumberByRrId);
+};
+
+// Shared by findAll/findAllForExport: productId/type/from/to -> a Prisma `where` clause. `productId` is
+// optional — omitting it (only findAllForExport allows this) means "every product."
+const buildWhere = ({ productId, type, from, to }) => {
+  const where = {};
+  const pid = parseInt(productId, 10);
+  if (pid) where.productId = pid;
+  if (type) where.type = type;
+
+  const createdAt = {};
+  if (from) {
+    const d = new Date(from);
+    if (!Number.isNaN(d.getTime())) createdAt.gte = d;
+  }
+  if (to) {
+    const d = new Date(to);
+    if (!Number.isNaN(d.getTime())) {
+      // A bare YYYY-MM-DD should include that whole day.
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(to))) d.setHours(23, 59, 59, 999);
+      createdAt.lte = d;
+    }
+  }
+  if (Object.keys(createdAt).length) where.createdAt = createdAt;
+  return where;
+};
 
 const StockMovementModel = {
-  // Newest first. `before` is the id of the last row already loaded (cursor pagination).
+  // Newest first. `before` is the id of the last row already loaded (cursor pagination). Omitting
+  // `productId` returns movements across every product (the all-products Ledger/History report).
   findAll: async ({ productId, type, from, to, limit, before } = {}) => {
-    const where = {};
-    const pid = parseInt(productId, 10);
-    if (pid) where.productId = pid;
-    if (type) where.type = type;
-
-    const createdAt = {};
-    if (from) {
-      const d = new Date(from);
-      if (!Number.isNaN(d.getTime())) createdAt.gte = d;
-    }
-    if (to) {
-      const d = new Date(to);
-      if (!Number.isNaN(d.getTime())) {
-        // A bare YYYY-MM-DD should include that whole day.
-        if (/^\d{4}-\d{2}-\d{2}$/.test(String(to))) d.setHours(23, 59, 59, 999);
-        createdAt.lte = d;
-      }
-    }
-    if (Object.keys(createdAt).length) where.createdAt = createdAt;
+    const where = buildWhere({ productId, type, from, to });
 
     const cursor = parseInt(before, 10);
     if (cursor) where.id = { lt: cursor };
@@ -97,30 +128,14 @@ const StockMovementModel = {
       orderBy: { id: 'desc' },
       take,
     });
-    return withAmounts(movements);
+    return withExtras(movements);
   },
 
-  // One product's whole ledger, oldest first (reads like a statement), for the "Export" button on Stock
-  // History — unpaginated, unlike findAll, but capped at MAX_EXPORT_ROWS so it can't run away.
+  // The whole ledger, oldest first (reads like a statement), for an Export button — unpaginated, unlike
+  // findAll, but capped at MAX_EXPORT_ROWS so it can't run away. Scoped to one product (Stock History's
+  // Export button) when `productId` is given, or every product (the Ledger/History report's Export) when not.
   findAllForExport: async ({ productId, type, from, to } = {}) => {
-    const pid = parseInt(productId, 10);
-    if (!pid) return [];
-    const where = { productId: pid };
-    if (type) where.type = type;
-
-    const createdAt = {};
-    if (from) {
-      const d = new Date(from);
-      if (!Number.isNaN(d.getTime())) createdAt.gte = d;
-    }
-    if (to) {
-      const d = new Date(to);
-      if (!Number.isNaN(d.getTime())) {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(String(to))) d.setHours(23, 59, 59, 999);
-        createdAt.lte = d;
-      }
-    }
-    if (Object.keys(createdAt).length) where.createdAt = createdAt;
+    const where = buildWhere({ productId, type, from, to });
 
     const movements = await prisma.stockMovement.findMany({
       where,
@@ -128,8 +143,8 @@ const StockMovementModel = {
       orderBy: { id: 'asc' },
       take: MAX_EXPORT_ROWS,
     });
-    return withAmounts(movements);
+    return withExtras(movements);
   },
 };
 
-module.exports = { StockMovementModel, STOCK_MOVEMENT_TYPES, attachAmounts, AMOUNT_SOURCES };
+module.exports = { StockMovementModel, STOCK_MOVEMENT_TYPES, attachAmounts, loadAmounts, AMOUNT_SOURCES };
