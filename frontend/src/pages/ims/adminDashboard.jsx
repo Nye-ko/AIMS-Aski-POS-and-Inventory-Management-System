@@ -173,13 +173,13 @@ export default function Dashboard() {
 
       {/* ===== HEADER ====== */}
       <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 shrink-0">
             <Home className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">DASHBOARD</h2>
+            <h2 className="text-sm sm:text-2xl font-black text-slate-800 tracking-tight truncate">DASHBOARD</h2>
           </div>
         </div>
 
@@ -226,7 +226,6 @@ export default function Dashboard() {
             </div>
 
             <div className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-white/80 via-blue-100/30 to-indigo-300/40 backdrop-blur-xl border border-white/80 px-2.5 py-2 sm:px-3 sm:py-3 sm:px-5 sm:py-3.5 shadow-xl shadow-blue-500/10 hover:shadow-2xl hover:scale-[1.02] transition-all duration-300">
-              <div className="absolute -top-10 -left-10 w-32 h-32 bg-rose-300/30 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-500 pointer-events-none" />
               <div className="flex items-center justify-between gap-1.5 mb-1.5 relative z-10">
                 <span className="text-[9px] sm:text-xs leading-tight font-bold text-slate-600 uppercase tracking-wider">Low Stocks Alert</span>
                 <div className="p-1.5 sm:p-2 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-rose-600 text-white shadow-md shadow-rose-500/30">

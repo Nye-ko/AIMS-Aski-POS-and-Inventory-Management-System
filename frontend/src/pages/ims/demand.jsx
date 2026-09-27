@@ -79,27 +79,27 @@ function SupplierLeadTimes({ onSaved }) {
     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 border border-slate-700/60 shadow-2xl shadow-slate-900/40">
       <div className="pointer-events-none absolute top-0 right-0 h-48 w-48 rounded-full bg-sky-500/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-blue-600/15 blur-2xl" />
-      <div className="flex items-center gap-2.5 border-b relative z-10 border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-sm shadow-blue-500/30">
-          <Truck className="h-4 w-4 text-white" />
+      <div className="flex items-start sm:items-center gap-2 sm:gap-2.5 border-b relative z-10 border-slate-700/60 px-3 py-2.5 sm:px-5 sm:py-4">
+        <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-sm shadow-blue-500/30">
+          <Truck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-white" />
         </div>
-        <div>
-          <h2 className="text-xs font-black uppercase tracking-wide text-white">Supplier Lead Times</h2>
-          <p className="text-[11px] text-slate-400">
+        <div className="min-w-0">
+          <h2 className="text-[11px] sm:text-xs font-black uppercase tracking-wide text-white">Supplier Lead Times</h2>
+          <p className="text-[10px] sm:text-[11px] text-slate-400 leading-snug">
             Days from ordering to delivery. A longer lead time means a product is flagged for reorder sooner.
           </p>
         </div>
       </div>
       {/* Fixed to 3 columns x 5 rows visible; more suppliers scroll vertically only. */}
       <div className="relative z-10 max-h-[328px] overflow-y-auto overflow-x-hidden p-3 sm:p-5">
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
         {suppliers.map((sup) => {
           const value = drafts[sup.id] ?? sup.leadTimeDays;
           const dirty = drafts[sup.id] !== undefined && Number(drafts[sup.id]) !== sup.leadTimeDays;
           return (
-            <div key={sup.id} className="flex h-14 items-center justify-between gap-3 rounded-2xl border border-slate-700/60 bg-white/5 px-4 py-3">
+            <div key={sup.id} className="flex flex-wrap sm:flex-nowrap sm:h-14 items-center justify-between gap-2 sm:gap-3 rounded-2xl border border-slate-700/60 bg-white/5 px-3 py-2.5 sm:px-4 sm:py-3">
               <span className="truncate text-xs font-bold text-slate-200">{sup.name}</span>
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 ml-auto sm:ml-0">
                 <input
                   type="number"
                   min="1"
@@ -204,13 +204,13 @@ export default function Demand() {
     <div className="space-y-6">
       {/* ===== HEADER ====== */}
       <header className="relative z-30 mb-6 lg:mb-12 flex flex-wrap items-center justify-between gap-3 sm:gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 shrink-0">
             <TrendingUp className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">DEMAND & SALES FORECASTING</h2>
+            <h2 className="text-sm sm:text-2xl font-black text-slate-800 tracking-tight truncate">DEMAND & SALES FORECASTING</h2>
           </div>
         </div>
 
@@ -400,7 +400,7 @@ export default function Demand() {
               <PackageCheck className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">SKU Demand & Reorder Logic</h2>
+              <h2 className="text-[10px] sm:text-xs font-black text-slate-800 uppercase tracking-wide truncate">SKU Demand & Reorder Logic</h2>
               <p className="text-[10px] sm:text-[11px] leading-snug text-slate-500">Item velocity, predicted 7-day demand, and suggested purchase order quantities</p>
             </div>
           </div>
@@ -425,7 +425,7 @@ export default function Demand() {
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {skuDemandList.map((item) => (
                 <tr key={item.id} className={`group transition-colors ${item.status === 'REORDER NOW' ? 'bg-rose-50/30 hover:bg-rose-50/70' : 'hover:bg-blue-50/40'}`}>
-                  <td className="relative px-4 py-3.5">
+                  <td className="relative px-4 py-3.5 whitespace-nowrap">
                     <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full ${item.status === 'REORDER NOW' ? 'bg-rose-400' : item.status === 'EXPIRY RISK' ? 'bg-amber-400 opacity-0 group-hover:opacity-100' : 'bg-blue-500 opacity-0 group-hover:opacity-100'} transition-opacity`} />
                     <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md">{item.sku}</span>
                   </td>

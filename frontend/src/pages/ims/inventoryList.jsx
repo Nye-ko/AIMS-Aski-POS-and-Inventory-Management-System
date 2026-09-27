@@ -131,18 +131,18 @@ export default function InventorySystem() {
   return (
     <>
       {/* ===== HEADER ====== */}
-      <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 sm:gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+      <header className="relative z-30 mb-6 lg:mb-12 flex flex-wrap items-center justify-between gap-3 sm:gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 shrink-0">
             <Package className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">INVENTORY MANAGEMENT</h2>
+            <h2 className="text-sm sm:text-2xl font-black text-slate-800 tracking-tight truncate">INVENTORY MANAGEMENT</h2>
           </div>
         </div>
 
-        <div className="flex flex-nowrap items-center gap-1 sm:gap-2 w-full sm:w-auto max-w-full sm:overflow-x-auto bg-white/60 backdrop-blur-sm p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-white/70">
+        <div className="mt-2 sm:mt-0 flex flex-nowrap items-center gap-1 sm:gap-2 w-full sm:w-auto max-w-full sm:overflow-x-auto bg-white/60 backdrop-blur-sm p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-white/70">
           <button
             onClick={() => setActiveTab('inventory')}
             className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
@@ -209,7 +209,7 @@ export default function InventorySystem() {
         </div>
       </header>
 
-      <div className="mt-6">
+      <div>
         {activeTab === 'inventory' && (
           <InventoryPage
             products={products}
