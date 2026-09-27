@@ -146,12 +146,12 @@ export default function Finance() {
   return (
     <div className="space-y-6">
       {/* ===== HEADER ===== */}
-      <header className="relative z-30 mb-6 lg:mb-12 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
-            <BarChart3 className="w-6 h-6" />
+      <header className="relative z-30 mb-6 lg:mb-12 flex items-start sm:items-center justify-between gap-3 sm:gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 shrink-0">
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
               <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
@@ -161,27 +161,27 @@ export default function Finance() {
                 {isConnected ? 'LIVE' : 'OFFLINE'}
               </span>
             </div>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">
+            <h2 className="text-sm sm:text-2xl font-black text-slate-800 tracking-tight truncate">
               FINANCE & AUDIT CONTROL
             </h2>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 relative">
-          <button 
-            onClick={fetchFinanceData} 
-            className="p-3 rounded-2xl bg-white border border-slate-200/60 text-slate-700 hover:bg-slate-50 transition shadow-sm"
+        <div className="flex items-center gap-2 sm:gap-3 relative shrink-0">
+          <button
+            onClick={fetchFinanceData}
+            className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-white border border-slate-200/60 text-slate-700 hover:bg-slate-50 transition shadow-sm"
             title="Refresh Data"
           >
-            <RefreshCw className="w-5 h-5 text-slate-700" />
+            <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
           </button>
 
           <div className="relative">
-            <button 
+            <button
               onClick={() => setIsNotifOpen(!isNotifOpen)}
-              className="relative p-3 rounded-2xl bg-white border border-slate-200/60 text-slate-700 hover:bg-slate-50 transition shadow-sm"
+              className="relative p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-white border border-slate-200/60 text-slate-700 hover:bg-slate-50 transition shadow-sm"
             >
-              <Bell className="w-5 h-5 text-slate-700" />
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
               {notif.unreadCount > 0 && (
                 <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
               )}

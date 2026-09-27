@@ -90,13 +90,13 @@ export default function SalesReport() {
   return (
     <div className="space-y-6">
       <header className="relative z-30 mb-6 lg:mb-12 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 shrink-0">
             <Receipt className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">SALES REPORT</h2>
+            <h2 className="text-sm sm:text-2xl font-black text-slate-800 tracking-tight truncate">SALES REPORT</h2>
           </div>
         </div>
 
@@ -148,12 +148,12 @@ export default function SalesReport() {
       </section>
 
       <div className="bg-white border border-slate-200/80 rounded-3xl overflow-hidden shadow-xl shadow-blue-500/5">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-100">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-1.5 sm:gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-100">
+          <div className="min-w-0">
             <h3 className="text-xs sm:text-sm font-extrabold text-slate-800">{monthLabel(month)}</h3>
-            <p className="text-[11px] text-slate-400 font-medium">One row per sale, plus one per void (on the day it was voided)</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium leading-snug">One row per sale, plus one per void (on the day it was voided)</p>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-600">
+          <span className="self-start sm:self-auto shrink-0 inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-600">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             {rows.length.toLocaleString()} {rows.length === 1 ? 'entry' : 'entries'}
           </span>
@@ -169,7 +169,7 @@ export default function SalesReport() {
                 <th className="px-2.5 py-2 sm:px-4 sm:py-3.5 text-right">Discount</th>
                 <th className="px-2.5 py-2 sm:px-4 sm:py-3.5 text-right">Total</th>
                 <th className="px-2.5 py-2 sm:px-4 sm:py-3.5">Payment</th>
-                <th className="px-2.5 py-2 sm:px-4 sm:py-3.5">Reference #</th>
+                <th className="px-2.5 py-2 sm:px-4 sm:py-3.5 whitespace-nowrap">Reference #</th>
                 <th className="px-3 py-2 sm:px-5 sm:py-3.5">Cashier</th>
               </tr>
             </thead>
@@ -225,7 +225,7 @@ export default function SalesReport() {
                     </td>
                     <td className={`px-2.5 py-2 sm:px-4 sm:py-3.5 text-right tabular-nums text-xs sm:text-[13px] font-extrabold ${isVoid ? 'text-rose-600' : 'text-slate-900'}`}>{peso(r.totalAmount)}</td>
                     <td className="px-2.5 py-2 sm:px-4 sm:py-3.5">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${pay.chip}`}>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold whitespace-nowrap ${pay.chip}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${pay.dot}`} />
                         {PAYMENT_LABELS[r.paymentMethod] || r.paymentMethod}
                       </span>

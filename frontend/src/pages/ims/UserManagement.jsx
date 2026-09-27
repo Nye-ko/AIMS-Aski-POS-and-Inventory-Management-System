@@ -329,13 +329,13 @@ export default function UserManagement() {
     <div className="space-y-6">
       {/* ===== HEADER ===== */}
       <header className="relative z-30 mb-6 lg:mb-12 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 shrink-0">
             <Users className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">USER ACCOUNT MANAGEMENT</h2>
+            <h2 className="text-sm sm:text-2xl font-black text-slate-800 tracking-tight truncate">USER ACCOUNT MANAGEMENT</h2>
           </div>
         </div>
       </header>

@@ -66,11 +66,10 @@ function AppLayout (){
           <button
             onClick={() => setNavOpen(true)}
             aria-label="Open menu"
-            className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-700"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-700"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <img src="/aski.png" alt="Logo" className="h-9 w-auto shrink-0" />
           <div className="min-w-0 leading-tight">
             <p className="font-extrabold text-base tracking-tight text-blue-900">AMPC</p>
             <p className="text-[10px] tracking-widest text-indigo-500 uppercase font-semibold">Inventory</p>
