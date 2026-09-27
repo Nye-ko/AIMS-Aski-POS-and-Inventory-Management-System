@@ -95,7 +95,7 @@ export default function ViewReceivingReportModal({ isOpen, onClose, receivingRep
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
           {isLoading && (
             <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
               <Loader2 className="w-5 h-5 animate-spin" /> Loading receiving report...

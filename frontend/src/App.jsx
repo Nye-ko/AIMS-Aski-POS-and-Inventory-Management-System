@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { Menu } from 'lucide-react'
 import { Routes, Route, Outlet} from 'react-router-dom'
 import CashierPOS from './pages/cashierPOS'
 import Login from './pages/ims/login'
@@ -13,8 +14,9 @@ import RequireAuth from './auth/RequireAuth'
 
 
 function AppLayout (){
+  const [navOpen, setNavOpen] = useState(false);
   return(
-    <div className="custom-jakarta min-h-screen flex bg-gradient-to-br from-sky-100 via-blue-200 to-indigo-300 text-slate-800 font-sans relative overflow-hidden">
+    <div className="custom-jakarta flex h-screen bg-gradient-to-br from-sky-100 via-blue-200 to-indigo-300 text-slate-800 font-sans relative overflow-hidden">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         
@@ -39,11 +41,11 @@ function AppLayout (){
           border-radius: 8px;
         }
         .navy-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.2);
+          background-color: rgba(255, 255, 255, 0.2);
           border-radius: 8px;
         }
         .navy-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.4);
+          background-color: rgba(255, 255, 255, 0.4);
         }
       `}</style>
 
@@ -52,12 +54,32 @@ function AppLayout (){
       <div className="absolute -bottom-32 left-1/3 w-96 h-96 bg-sky-200 rounded-full blur-3xl opacity-70 pointer-events-none" />
 
       {/* Shared Sidebar */}
-      <Sidebar />
+      <Sidebar mobileOpen={navOpen} onMobileClose={() => setNavOpen(false)} />
+      {navOpen && (
+        <div className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
+      )}
 
       {/* Main Container where page content changes */}
-      <main className="flex-1 flex flex-col p-6 overflow-y-auto space-y-6 z-10">
-        <Outlet />
-      </main>
+      <div className="flex-1 min-w-0 h-screen flex flex-col z-10">
+        {/* Mobile / tablet top bar with the menu button */}
+        <div className="lg:hidden flex items-center gap-3 px-3 sm:px-4 py-2.5 border-b border-white/60 bg-white/60 backdrop-blur-xl shrink-0">
+          <button
+            onClick={() => setNavOpen(true)}
+            aria-label="Open menu"
+            className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-700"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <img src="/aski.png" alt="Logo" className="h-9 w-auto shrink-0" />
+          <div className="min-w-0 leading-tight">
+            <p className="font-extrabold text-base tracking-tight text-blue-900">AMPC</p>
+            <p className="text-[10px] tracking-widest text-indigo-500 uppercase font-semibold">Inventory</p>
+          </div>
+        </div>
+        <main className="flex-1 min-w-0 flex flex-col p-3 sm:p-4 lg:p-6 overflow-y-auto overflow-x-hidden space-y-4 lg:space-y-6 [&>*]:shrink-0">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

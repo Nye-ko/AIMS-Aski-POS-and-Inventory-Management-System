@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
   Package,
-  BrainCircuit,
+  TrendingUp,
   BarChart3,
   Receipt,
   Settings,
@@ -134,8 +134,23 @@ function AdminAuthModal({ onClose, onVerified }) {
   );
 }
 
-export default function Sidebar() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+function useIsDesktop() {
+  const query = '(min-width: 1024px)';
+  const [matches, setMatches] = useState(() => (typeof window !== 'undefined' ? window.matchMedia(query).matches : true));
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = (e) => setMatches(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+  return matches;
+}
+
+// Below 1024px the sidebar becomes a slide-over drawer controlled by the layout (mobileOpen / onMobileClose).
+export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }) {
+  const [collapsedPref, setIsSidebarCollapsed] = useState(false);
+  const isDesktop = useIsDesktop();
+  const isSidebarCollapsed = isDesktop && collapsedPref;
   const [showAdminAuthModal, setShowAdminAuthModal] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const navigate = useNavigate();
@@ -151,7 +166,7 @@ export default function Sidebar() {
   const allSidebarLinks = [
     { id: 'home', label: 'Home', icon: Home, path: '/adminDashboard', roles: ['SUPERVISOR', 'INVENTORY', 'ACCOUNTING'] },
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventoryList', roles: ['SUPERVISOR', 'INVENTORY'] },
-    { id: 'forecasting', label: 'Forecasting', icon: BrainCircuit, path: '/pages/ims/demand', roles: ['INVENTORY', 'ACCOUNTING'] },
+    { id: 'forecasting', label: 'Forecasting', icon: TrendingUp, path: '/pages/ims/demand', roles: ['INVENTORY', 'ACCOUNTING'] },
     { id: 'finance', label: 'Finance', icon: BarChart3, path: '/pages/ims/finance', roles: ['ACCOUNTING'] },
     { id: 'salesReport', label: 'Sales Report', icon: Receipt, path: '/pages/ims/salesReport', roles: ['ACCOUNTING'] },
     { id: 'users', label: 'User Management', icon: Users, path: '/pages/ims/UserManagement', roles: [] },
@@ -166,22 +181,30 @@ export default function Sidebar() {
       return;
     }
     navigate(item.path);
+    onMobileClose();
   };
 
   return (
     <aside 
-      className={`relative z-20 m-4 mr-0 flex flex-col rounded-3xl bg-white/30 backdrop-blur-xl border border-white/60 shadow-xl shadow-blue-500/5 transition-all duration-300 ${
-        isSidebarCollapsed ? 'w-20' : 'w-64'
+      className={`fixed inset-y-0 left-0 z-50 m-2 h-[calc(100dvh-1rem)] w-64 max-w-[85vw] transition-transform lg:transition-all lg:relative lg:z-20 lg:m-4 lg:mr-0 lg:h-[calc(100vh-2rem)] lg:sticky lg:top-4 lg:translate-x-0 flex-shrink-0 flex flex-col ${mobileOpen ? 'translate-x-0' : '-translate-x-[110%]'} rounded-3xl bg-white/75 backdrop-blur-[12px] border border-white/50 shadow-xl shadow-blue-500/5 transition-all duration-300 ${
+        isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
       }`}
     >
       <button
         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        className="absolute -right-3.5 top-8 w-7 h-7 bg-white/80 border border-white shadow-md backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 hover:text-blue-600 transition z-30"
+        className="hidden lg:flex absolute -right-3.5 top-8 w-7 h-7 bg-white/80 border border-white shadow-md backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 hover:text-blue-600 transition z-30"
       >
         {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
       </button>
+      <button
+        onClick={onMobileClose}
+        aria-label="Close menu"
+        className="lg:hidden absolute right-3 top-4 w-8 h-8 rounded-full bg-white/80 border border-slate-200 text-slate-600 flex items-center justify-center z-30"
+      >
+        <X className="w-4 h-4" />
+      </button>
 
-      <div className={`p-5 flex items-center border-b border-white/40 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+      <div className={`p-5 flex items-center border-b border-slate-200/70 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
         <div className="w-20 h-10 shrink-0">
           <img src="/aski.png" alt="Logo" />
         </div>
@@ -190,14 +213,14 @@ export default function Sidebar() {
             <h1 className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-blue-900 to-indigo-800 bg-clip-text text-transparent whitespace-nowrap">
               AMPC
             </h1>
-            <p className="text-[10px] tracking-widest text-blue-700/70 uppercase font-semibold whitespace-nowrap">
+            <p className="text-[10px] tracking-widest text-indigo-500 uppercase font-semibold whitespace-nowrap">
               Inventory
             </p>
           </div>
         )}
       </div>
 
-      <nav className="flex-1 px-3 py-6 space-y-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-6 space-y-2">
         {sidebarLinks.map((item) => {
           const Icon = item.icon;
           
@@ -209,24 +232,24 @@ export default function Sidebar() {
               key={item.id}
               onClick={() => handleNavClick(item)}
               title={isSidebarCollapsed ? item.label : undefined}
-              className={`w-full flex items-center gap-3.5 px-3.5 py-3 rounded-2xl text-sm font-medium transition-all duration-300 relative ${
+              className={`w-full flex items-center gap-3.5 px-3.5 py-3 rounded-2xl text-sm font-medium group transition-all duration-300 relative ${
                 isActive
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30 font-semibold'
-                  : 'text-slate-700 hover:bg-white/40 hover:text-blue-900'
+                  ? 'bg-gradient-to-r from-[#5C62F6] to-[#8B5CF6] text-white shadow-lg shadow-indigo-500/30 font-semibold'
+                  : 'text-[#334155] hover:bg-indigo-50/80 hover:text-indigo-700'
               } ${isSidebarCollapsed ? 'justify-center' : ''}`}
             >
-              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-slate-600'}`} />
+              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-[#64748B] group-hover:text-indigo-600'}`} />
               {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
               {isActive && !isSidebarCollapsed && (
-                <span className="absolute right-3 w-2 h-2 rounded-full bg-white shadow-sm animate-pulse" />
+                <span className="absolute right-3 w-2 h-2 rounded-full bg-white shadow-sm" />
               )}
             </button>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t border-white/40 space-y-2">
-        <div className={`flex items-center gap-3 p-2 rounded-2xl bg-white/20 border border-white/40 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+      <div className="p-3 border-t border-slate-200/70 space-y-2">
+        <div className={`flex items-center gap-3 p-2 rounded-2xl bg-white/70 border border-slate-200/70 shadow-sm ${isSidebarCollapsed ? 'justify-center' : ''}`}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 border border-white flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-sm">
             {(user?.username?.[0] || '?').toUpperCase()}
           </div>
@@ -242,14 +265,14 @@ export default function Sidebar() {
           <button
             onClick={() => setShowChangePassword(true)}
             title="Change password"
-            className="flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-slate-700 bg-white/40 border border-white/60 hover:bg-white/70 transition-all"
+            className="flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-slate-700 bg-white/70 border border-slate-200/70 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-all"
           >
             <KeyRound className="w-4 h-4 text-slate-600 shrink-0" />
             {!isSidebarCollapsed && <span>Password</span>}
           </button>
           <button
             onClick={handleLogout}
-            className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-rose-700 bg-rose-500/10 border border-rose-200/50 hover:bg-rose-500/20 transition-all"
+            className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200/70 hover:bg-rose-100 transition-all"
           >
             <LogOut className="w-4 h-4 text-rose-600 shrink-0" />
             {!isSidebarCollapsed && <span>Logout</span>}

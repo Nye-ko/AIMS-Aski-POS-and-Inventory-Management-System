@@ -7,6 +7,12 @@
 /* Applied on body (not scoped to any wrapper) so portaled content — like
    modals rendered into document.body — inherits the same typeface as the
    rest of the app. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
@@ -29,8 +35,57 @@ body {
   animation: modal-zoom-in 200ms ease-out;
 }
 
+/* Global slim scrollbar: floating pill thumb, no track, fades in on hover.
+   Zero-specificity (:where) so the dark variants below and any component
+   styling still win. */
+:where(*)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(*)::-webkit-scrollbar-track,
+:where(*)::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:where(*)::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.35);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  transition: background-color 0.2s;
+}
+
+:where(*)::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(59, 130, 246, 0.6);
+}
+
+:where(*)::-webkit-scrollbar-thumb:active {
+  background-color: rgba(37, 99, 235, 0.8);
+}
+
+/* Firefox has no ::-webkit-scrollbar; Chrome 121+ would let these override
+   the rules above, so only apply them where webkit pseudo-elements don't exist. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+  }
+}
+
+.transparent-scrollbar::-webkit-scrollbar,
+.navy-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-thumb,
+.navy-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
 .transparent-scrollbar::-webkit-scrollbar {
-  width: 5px;
+  width: 8px;
 }
 
 .transparent-scrollbar::-webkit-scrollbar-track {
@@ -38,10 +93,10 @@ body {
 }
 
 .transparent-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.2);
   border-radius: 8px;
 }
 
 .transparent-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background-color: rgba(255, 255, 255, 0.4);
 }

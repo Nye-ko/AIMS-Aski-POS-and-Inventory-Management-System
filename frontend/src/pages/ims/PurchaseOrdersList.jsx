@@ -114,15 +114,15 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-modal-backdrop">
       <div className="font-sans bg-white rounded-2xl shadow-2xl shadow-slate-900/20 max-w-5xl w-full border border-slate-200/80 max-h-[88vh] flex flex-col animate-modal-card overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
-              <ClipboardList className="w-5 h-5" />
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
+              <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <h3 className="text-xl font-black text-slate-800 tracking-tight">Purchase Orders</h3>
+            <h3 className="text-base sm:text-xl font-black text-slate-800 tracking-tight">Purchase Orders</h3>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors cursor-pointer">
             <X className="w-4 h-4" />
@@ -130,31 +130,31 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
         </div>
 
         {/* Search */}
-        <div className="px-6 pt-5 shrink-0">
+        <div className="px-4 sm:px-6 pt-3 sm:pt-5 shrink-0">
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Purchase Order Number"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2.5 text-[11px] sm:text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
             />
           </div>
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-5">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+            <table className="w-full min-w-[560px] sm:min-w-[620px] text-left text-[11px] sm:text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 font-extrabold uppercase text-[9px] sm:text-[10px] tracking-wider border-b-2 border-slate-200">
                 <tr>
-                  <th className="px-4 py-3">PO Number</th>
-                  <th className="px-4 py-3">Date Created</th>
-                  <th className="px-4 py-3">Supplier</th>
-                  <th className="px-4 py-3">Net Amount</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Received</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">PO Number</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Date Created</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Supplier</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Net Amount</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Status</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Received</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -192,16 +192,16 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
                       onClick={() => handleRowClick(po.id)}
                       className={`cursor-pointer transition-colors hover:bg-slate-50 ${selectedId === po.id ? 'bg-blue-50/70' : ''}`}
                     >
-                      <td className="px-4 py-3 font-bold text-slate-800">{po.poNumber}</td>
-                      <td className="px-4 py-3 text-slate-500">{new Date(po.createdAt).toLocaleDateString()}</td>
-                      <td className="px-4 py-3 text-slate-600">{po.supplier?.name || 'N/A'}</td>
-                      <td className="px-4 py-3 font-bold text-slate-900">₱{Number(po.totalAmount).toFixed(2)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 font-bold text-slate-800">{po.poNumber}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500">{new Date(po.createdAt).toLocaleDateString()}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-600">{po.supplier?.name || 'N/A'}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 font-bold text-slate-900">₱{Number(po.totalAmount).toFixed(2)}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3">
                         <span className={`inline-block border text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${STATUS_STYLES[po.status] || STATUS_STYLES.DRAFT}`}>
                           {po.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3">
                         {po.status === 'DRAFT' || po.status === 'CANCELLED' ? (
                           <span className="text-slate-300">—</span>
                         ) : po.receivingReport ? (
@@ -238,7 +238,7 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
         </div>
 
         {/* Bottom action toolbar */}
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0 space-y-3">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-100 bg-slate-50/50 shrink-0 space-y-3">
           {actionError && (
             <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">
               {actionError}
@@ -271,40 +271,40 @@ export default function PurchaseOrdersList({ isOpen, onClose, products }) {
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-5 py-2.5 font-semibold text-xs shadow-lg shadow-blue-500/20 transition cursor-pointer"
+                className="flex items-center gap-1 sm:gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-3 py-1.5 sm:px-5 sm:py-2.5 font-semibold text-[11px] sm:text-xs shadow-lg shadow-blue-500/20 transition cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 New
               </button>
               <button
                 type="button"
                 onClick={handleOpenSelected}
                 disabled={!selectedPO}
-                className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 rounded-xl px-4 py-2.5 font-semibold text-xs hover:bg-slate-50 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="flex items-center gap-1 sm:gap-2 bg-white border border-slate-200 text-slate-700 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-2.5 font-semibold text-[11px] sm:text-xs hover:bg-slate-50 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                <FolderOpen className="w-4 h-4" />
+                <FolderOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 Open
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingAction('cancel')}
                 disabled={!canCancel}
-                className="flex items-center gap-2 text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 font-semibold text-xs transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="flex items-center gap-1 sm:gap-2 text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-2.5 font-semibold text-[11px] sm:text-xs transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                <Ban className="w-4 h-4" />
+                <Ban className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 Cancel PO
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingAction('delete')}
                 disabled={!canDelete}
-                className="flex items-center gap-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 font-semibold text-xs transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="flex items-center gap-1 sm:gap-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-2.5 font-semibold text-[11px] sm:text-xs transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 Delete
               </button>
             </div>

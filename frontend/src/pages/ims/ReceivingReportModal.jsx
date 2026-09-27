@@ -196,19 +196,19 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-modal-backdrop">
       <div className="font-sans bg-white rounded-2xl shadow-2xl shadow-slate-900/10 max-w-4xl w-full border border-slate-200/80 max-h-[90vh] flex flex-col animate-modal-card">
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between p-3 sm:p-5 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             {view === 'detail' && !initialPurchaseOrder && (
               <button onClick={() => setView('list')} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
             )}
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <ClipboardCheck className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <ClipboardCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+            <h3 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wide">
               {view === 'list' ? 'Create Receiving Report — Pending Purchase Orders' : `Receiving Report — ${selectedPo?.poNumber}`}
             </h3>
           </div>
@@ -217,11 +217,11 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 sm:space-y-4">
           {view === 'list' && (
             <>
               {isLoadingList && (
-                <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
+                <div className="flex items-center justify-center py-8 sm:py-12 text-slate-400 gap-2 text-xs sm:text-sm">
                   <Loader2 className="w-5 h-5 animate-spin" /> Loading pending purchase orders...
                 </div>
               )}
@@ -231,8 +231,8 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
                 </div>
               )}
               {!isLoadingList && !listError && pendingOrders.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-sm gap-2">
-                  <Inbox className="w-8 h-8" />
+                <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-slate-400 text-xs sm:text-sm gap-2">
+                  <Inbox className="w-6 h-6 sm:w-8 sm:h-8" />
                   <p>No pending purchase orders are awaiting a Receiving Report.</p>
                 </div>
               )}
@@ -241,13 +241,13 @@ export default function ReceivingReportModal({ isOpen, onClose, onSaved, initial
                   <button
                     key={po.id}
                     onClick={() => openPurchaseOrder(po)}
-                    className="w-full flex items-center justify-between border border-slate-200 rounded-2xl px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition text-left"
+                    className="w-full flex items-center justify-between border border-slate-200 rounded-2xl px-3 py-2 sm:px-4 sm:py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition text-left"
                   >
                     <div>
-                      <p className="text-xs font-black text-slate-800">{po.poNumber}</p>
-                      <p className="text-[11px] text-slate-500">{po.supplier?.name} — {po.items.length} item(s)</p>
+                      <p className="text-[11px] sm:text-xs font-black text-slate-800">{po.poNumber}</p>
+                      <p className="text-[10px] sm:text-[11px] text-slate-500">{po.supplier?.name} — {po.items.length} item(s)</p>
                     </div>
-                    <p className="text-xs font-bold text-slate-600">₱{Number(po.totalAmount).toFixed(2)}</p>
+                    <p className="text-[11px] sm:text-xs font-bold text-slate-600">₱{Number(po.totalAmount).toFixed(2)}</p>
                   </button>
                 ))}
             </>

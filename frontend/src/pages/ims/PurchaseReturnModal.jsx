@@ -5,6 +5,7 @@ import { X, RotateCcw, Loader2, Inbox, ChevronLeft, Search } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext';
 
 import { apiFetch } from '../../auth/apiFetch';
+import Dropdown from '../../components/Dropdown';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const REASON_OPTIONS = ['Damaged', 'Expired', 'Incorrect Item', 'Overstock', 'Retail'];
@@ -178,19 +179,19 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-modal-backdrop">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-modal-backdrop">
       <div className="font-sans bg-white rounded-2xl shadow-2xl shadow-slate-900/10 max-w-4xl w-full border border-slate-200/80 max-h-[90vh] flex flex-col animate-modal-card">
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between p-3 sm:p-5 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             {view === 'detail' && (
               <button onClick={() => setView('supplier')} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
             )}
-            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-              <RotateCcw className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+              <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+            <h3 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wide">
               {view === 'supplier' ? 'Create Purchase Return — Select Supplier' : `Purchase Return — ${selectedSupplier?.name}`}
             </h3>
           </div>
@@ -199,11 +200,11 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 sm:space-y-4">
           {view === 'supplier' && (
             <>
               {isLoadingSuppliers && (
-                <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
+                <div className="flex items-center justify-center py-8 sm:py-12 text-slate-400 gap-2 text-xs sm:text-sm">
                   <Loader2 className="w-5 h-5 animate-spin" /> Loading suppliers...
                 </div>
               )}
@@ -213,8 +214,8 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                 </div>
               )}
               {!isLoadingSuppliers && !listError && suppliers.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-sm gap-2">
-                  <Inbox className="w-8 h-8" />
+                <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-slate-400 text-xs sm:text-sm gap-2">
+                  <Inbox className="w-6 h-6 sm:w-8 sm:h-8" />
                   <p>No suppliers yet.</p>
                 </div>
               )}
@@ -223,11 +224,11 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                   <button
                     key={supplier.id}
                     onClick={() => openSupplier(supplier)}
-                    className="w-full flex items-center justify-between border border-slate-200 rounded-2xl px-4 py-3 hover:border-rose-300 hover:bg-rose-50/40 transition text-left"
+                    className="w-full flex items-center justify-between border border-slate-200 rounded-2xl px-3 py-2 sm:px-4 sm:py-3 hover:border-rose-300 hover:bg-rose-50/40 transition text-left"
                   >
                     <div>
-                      <p className="text-xs font-black text-slate-800">{supplier.name}</p>
-                      <p className="text-[11px] text-slate-500">{supplier.contactPerson || 'No contact person on file'}</p>
+                      <p className="text-[11px] sm:text-xs font-black text-slate-800">{supplier.name}</p>
+                      <p className="text-[10px] sm:text-[11px] text-slate-500">{supplier.contactPerson || 'No contact person on file'}</p>
                     </div>
                   </button>
                 ))}
@@ -242,18 +243,16 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1">Reason for Return</label>
-                  <select
+                  <Dropdown
+                    size="sm"
                     value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-semibold"
-                  >
-                    {REASON_OPTIONS.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
+                    onChange={setReason}
+                    options={REASON_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                    ariaLabel="Reason for return"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1">Supplier</label>
@@ -273,19 +272,19 @@ export default function PurchaseReturnModal({ isOpen, onClose, onSaved }) {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search this supplier's delivered items by name or barcode..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 transition-all"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-1.5 sm:py-2.5 text-[11px] sm:text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 transition-all"
                 />
               </div>
 
               {isLoadingBatches && (
-                <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
+                <div className="flex items-center justify-center py-8 sm:py-12 text-slate-400 gap-2 text-sm">
                   <Loader2 className="w-5 h-5 animate-spin" /> Loading deliveries...
                 </div>
               )}
 
               {!isLoadingBatches && batches.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-sm gap-2">
-                  <Inbox className="w-8 h-8" />
+                <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-slate-400 text-sm gap-2">
+                  <Inbox className="w-6 h-6 sm:w-8 sm:h-8" />
                   <p>
                     {items.length === 0
                       ? 'No receiving reports have been filed for this supplier yet.'

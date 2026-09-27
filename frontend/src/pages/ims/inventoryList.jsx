@@ -16,7 +16,7 @@ import {
   Loader2,
   Check,
   LayoutGrid,
-  History, SlidersHorizontal, Inbox,
+  History, SlidersHorizontal, Inbox, ShoppingCart,
   Users, Star, Scale, AlertTriangle, CheckCircle2
 } from 'lucide-react';
 import { CategoryIcon } from '../../utils/CategoryIcon';
@@ -28,6 +28,8 @@ import AdjustStockModal from './AdjustStockModal';
 import ReceiptPreviewModal, { LedgerReference } from './ReceiptPreviewModal';
 
 import { apiFetch, getAuthToken } from '../../auth/apiFetch';
+import Dropdown from '../../components/Dropdown';
+import DatePicker from '../../components/DatePicker';
 import { useAuth } from '../../auth/AuthContext';
 import { buildInventorySheets } from '../../utils/inventorySheets';
 import { exportToExcel } from '../../utils/exportExcel';
@@ -130,75 +132,75 @@ export default function InventorySystem() {
   return (
     <>
       {/* ===== HEADER ====== */}
-      <header className="relative z-30 flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-8 py-4 shadow-xl shadow-blue-500/10">
+      <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 sm:gap-4 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
             <Package className="w-6 h-6" />
           </div>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight">INVENTORY MANAGEMENT</h2>
+            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">INVENTORY MANAGEMENT</h2>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm p-1.5 rounded-2xl border border-white/70">
+        <div className="flex flex-nowrap items-center gap-1 sm:gap-2 w-full sm:w-auto max-w-full sm:overflow-x-auto bg-white/60 backdrop-blur-sm p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-white/70">
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
               activeTab === 'inventory'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Package className="w-4 h-4" />
+            <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Inventory List</span>
           </button>
 
           <button
             onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
               activeTab === 'reports'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <BarChart3 className="w-4 h-4" />
+            <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Supplier Reports</span>
           </button>
 
           <button
             onClick={() => setActiveTab('ledger')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
               activeTab === 'ledger'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <History className="w-4 h-4" />
+            <History className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Ledger / History</span>
           </button>
 
           <button
             onClick={() => setActiveTab('members')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
               activeTab === 'members'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Members</span>
           </button>
 
           <button
             onClick={() => setActiveTab('reconciliation')}
-            className={`flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
               activeTab === 'reconciliation'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Scale className="w-4 h-4" />
+            <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Reconciliation</span>
           </button>
         </div>
@@ -242,9 +244,9 @@ function ToolbarButton({ icon: Icon, iconColor, label, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+      className="flex w-full sm:w-auto flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2 px-1.5 sm:px-3.5 py-1.5 sm:py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-[10px] sm:text-xs text-center sm:text-left leading-tight rounded-lg sm:rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
     >
-      <Icon className={`w-4 h-4 ${iconColor}`} />
+      <Icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${iconColor}`} />
       <span>{label}</span>
     </button>
   );
@@ -461,9 +463,9 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5 space-y-4">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-3 sm:p-5 space-y-4">
         {/* Row 1: utility actions — uniform neutral toolbar buttons (they wrap as a group) */}
-        <div className="relative z-10 flex flex-wrap items-center gap-2">
+        <div className="relative z-10 grid grid-cols-3 gap-1.5 sm:gap-2 sm:flex sm:flex-wrap sm:items-center">
           <ToolbarButton icon={FileSpreadsheet} iconColor="text-emerald-600" label="Export Inventory Sheet" onClick={handleExportInventorySheet} />
           {canWrite && (
             <>
@@ -482,87 +484,18 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
             </>
           )}
-        </div>
-
-        <div className="relative z-10 border-t border-slate-100" />
-
-        {/* Row 2: search + category filter — z-20 so its dropdown (which
-            visually overflows into the card below) always wins the stacking
-            tie against the Product List card's own z-10 header/table rows */}
-        <div className="relative z-20 flex flex-col sm:flex-row sm:items-center gap-2">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="w-4 h-4 text-blue-500 absolute left-4 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search barcode, product or supplier..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white border border-slate-200/80 shadow-sm rounded-full pl-9 pr-4 py-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
-            />
-          </div>
-
-          {/* Custom dropdown with category icons — matches cashierPOS.jsx's category filter */}
-          <div className="relative" ref={categoryMenuRef}>
-            <button
-              type="button"
-              onClick={() => setCategoryMenuOpen((o) => !o)}
-              className="flex items-center gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-600 pl-3 pr-3 py-2.5 rounded-full text-xs font-semibold hover:border-blue-300 transition-colors cursor-pointer"
-            >
-              {selectedCategory === 'All' ? (
-                <LayoutGrid className="w-3.5 h-3.5 text-blue-500" />
-              ) : (
-                <CategoryIcon category={selectedCategory} className="w-3.5 h-3.5 text-blue-500" />
-              )}
-              {selectedCategory === 'All' ? 'All Categories' : selectedCategory}
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${categoryMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {categoryMenuOpen && (
-              <div className="absolute top-full left-0 mt-2 min-w-[200px] w-max max-w-xs bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1.5 max-h-64 overflow-y-auto">
-                <button
-                  type="button"
-                  onClick={() => { setSelectedCategory('All'); setCategoryMenuOpen(false); }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${selectedCategory === 'All' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span className="flex-1 text-left">All Categories</span>
-                  {selectedCategory === 'All' && <Check className="w-3.5 h-3.5" />}
-                </button>
-                {categories.length === 0 ? (
-                  <p className="px-3 py-2 text-xs text-slate-400">No categories yet</p>
-                ) : (
-                  categories.map((cat) => {
-                    const active = selectedCategory === cat;
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => { setSelectedCategory(cat); setCategoryMenuOpen(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        <CategoryIcon category={cat} className="w-3.5 h-3.5" />
-                        <span className="flex-1 text-left">{cat}</span>
-                        {active && <Check className="w-3.5 h-3.5" />}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
-
           {canWrite && <button
             onClick={() => {
               setIsFormOpen(!isFormOpen);
               setIsAddStockOpen(false);
             }}
-            className={`sm:ml-auto flex shrink-0 items-center justify-center gap-2 px-4 py-2 font-bold text-xs rounded-full transition-all cursor-pointer ${
+            className={`w-full sm:w-auto sm:ml-auto flex shrink-0 flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[10px] sm:text-xs rounded-lg sm:rounded-full transition-all cursor-pointer ${
               isFormOpen
                 ? 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50'
                 : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40'
             }`}
           >
-            {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {isFormOpen ? <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
             <span>{isFormOpen ? 'Close Form' : 'Add Product'}</span>
           </button>}
         </div>
@@ -570,48 +503,48 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
       {/* ADD NEW PRODUCT FORM */}
       {isFormOpen && (
-        <div className="relative overflow-hidden bg-[#0B132B] border border-slate-800 p-6 rounded-2xl shadow-2xl shadow-slate-950/40 animate-fadeIn">
+        <div className="relative overflow-hidden bg-[#0B132B] border border-slate-800 p-4 sm:p-6 rounded-2xl shadow-2xl shadow-slate-950/40 animate-fadeIn">
           <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
           <form onSubmit={handleAddProduct} className="relative z-10">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Product Details</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 mb-3 sm:mb-6">
+              <h2 className="text-xs sm:text-sm font-bold text-slate-300 uppercase tracking-wider">Product Details</h2>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleClearForm}
-                  className="px-4 py-2 bg-slate-800/80 border border-slate-700 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition-all cursor-pointer"
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-800/80 border border-slate-700 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition-all cursor-pointer"
                 >
                   Clear
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 font-semibold text-xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+                  className="px-4 py-1.5 sm:px-5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 font-semibold text-xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmitting ? 'Saving...' : 'Add Product'}
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Barcode</label>
-                <input type="text" name="barcode" value={formData.barcode} onChange={handleInputChange} placeholder="Auto-generated if blank" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Barcode</label>
+                <input type="text" name="barcode" value={formData.barcode} onChange={handleInputChange} placeholder="Auto-generated if blank" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Product Name</label>
-                <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="e.g., Whole Milk 1L" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" required />
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Product Name</label>
+                <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="e.g., Whole Milk 1L" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" required />
               </div>
 
               {/* Supplier — custom dark dropdown */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Supplier</label>
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Supplier</label>
                 <div className="relative" ref={productSupplierMenuRef}>
                   <button
                     type="button"
                     onClick={() => setProductSupplierMenuOpen((o) => !o)}
-                    className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-4 py-2.5 text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
                   >
                     <span className={`truncate ${formData.supplierId ? 'text-slate-200' : 'text-slate-500'}`}>
                       {suppliers.find((s) => String(s.id) === String(formData.supplierId))?.name || 'Select Supplier'}
@@ -648,13 +581,13 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               </div>
 
               {/* Category — custom dark dropdown with icons, plus a free-text fallback for new categories */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Category</label>
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Category</label>
                 <div className="relative" ref={productCategoryMenuRef}>
                   <button
                     type="button"
                     onClick={() => setProductCategoryMenuOpen((o) => !o)}
-                    className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-4 py-2.5 text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
                   >
                     <span className={`flex items-center gap-2 truncate ${formData.category ? 'text-slate-200' : 'text-slate-500'}`}>
                       {formData.category && <CategoryIcon category={formData.category} className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
@@ -703,23 +636,23 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Initial Stock Quantity</label>
-                <input type="number" name="currentStock" value={formData.currentStock} onChange={handleInputChange} placeholder="e.g., 50" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Initial Stock Quantity</label>
+                <input type="number" name="currentStock" value={formData.currentStock} onChange={handleInputChange} placeholder="e.g., 50" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Min Stock (Alert Threshold)</label>
-                <input type="number" name="minStock" value={formData.minStock} onChange={handleInputChange} placeholder="Defaults to 10" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Min Stock (Alert Threshold)</label>
+                <input type="number" name="minStock" value={formData.minStock} onChange={handleInputChange} placeholder="Defaults to 10" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Unit Cost (₱)</label>
-                <input type="number" name="unitCost" value={formData.unitCost} onChange={handleInputChange} placeholder="0.00" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Unit Cost (₱)</label>
+                <input type="number" name="unitCost" value={formData.unitCost} onChange={handleInputChange} placeholder="0.00" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Selling Price (₱)</label>
-                <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="0.00" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-4 py-2.5 text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
+                <label className="block text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 sm:mb-1.5">Selling Price (₱)</label>
+                <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="0.00" className="w-full bg-slate-900/90 border border-slate-700/80 text-white rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all [color-scheme:dark]" />
               </div>
             </div>
           </form>
@@ -802,17 +735,14 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Supplier</label>
-                <select
-                  value={stockSupplierId}
-                  onChange={(e) => setStockSupplierId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-semibold text-slate-800"
+                <Dropdown
+                  value={String(stockSupplierId ?? '')}
+                  onChange={setStockSupplierId}
+                  options={suppliers.map((s) => ({ value: String(s.id), label: s.name }))}
+                  placeholder="-- Choose Supplier --"
+                  ariaLabel="Supplier"
                   required
-                >
-                  <option value="">-- Choose Supplier --</option>
-                  {suppliers.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div>
@@ -851,51 +781,119 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
       )}
 
       {/* PRODUCT LIST TABLE */}
-      <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
-        <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm">
+        {/* z-30 (above the table's z-10) so the category dropdown can overlap the rows below */}
+        <div className="relative z-30 px-3 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="order-1 flex items-center gap-2.5">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
               <Package className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Product List</h2>
+            <h2 className="text-[11px] sm:text-xs font-black text-slate-800 uppercase tracking-wide">Product List</h2>
           </div>
-          <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">{filteredProducts.length} items</span>
+
+          <div className="order-3 sm:order-2 w-full sm:w-auto flex sm:flex-1 flex-row items-center justify-end gap-2">
+            <div className="relative flex-1 min-w-0 sm:flex-none w-full sm:max-w-sm">
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500 absolute left-4 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search barcode, product or supplier..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-white border border-slate-200/80 shadow-sm rounded-full pl-9 pr-4 py-1.5 sm:py-2.5 text-[11px] sm:text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+              />
+            </div>
+  
+            {/* Custom dropdown with category icons — matches cashierPOS.jsx's category filter */}
+            <div className="relative shrink-0" ref={categoryMenuRef}>
+              <button
+                type="button"
+                onClick={() => setCategoryMenuOpen((o) => !o)}
+                className="flex items-center gap-1.5 sm:gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-600 pl-2.5 pr-2.5 sm:pl-3 sm:pr-3 py-1.5 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-semibold hover:border-blue-300 transition-colors cursor-pointer"
+              >
+                {selectedCategory === 'All' ? (
+                  <LayoutGrid className="w-3.5 h-3.5 text-blue-500" />
+                ) : (
+                  <CategoryIcon category={selectedCategory} className="w-3.5 h-3.5 text-blue-500" />
+                )}
+                {selectedCategory === 'All' ? 'All Categories' : selectedCategory}
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${categoryMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+  
+              {categoryMenuOpen && (
+                <div className="absolute top-full left-0 mt-2 min-w-[200px] w-max max-w-xs bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1.5 max-h-64 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedCategory('All'); setCategoryMenuOpen(false); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${selectedCategory === 'All' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span className="flex-1 text-left">All Categories</span>
+                    {selectedCategory === 'All' && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  {categories.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-slate-400">No categories yet</p>
+                  ) : (
+                    categories.map((cat) => {
+                      const active = selectedCategory === cat;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => { setSelectedCategory(cat); setCategoryMenuOpen(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${active ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          <CategoryIcon category={cat} className="w-3.5 h-3.5" />
+                          <span className="flex-1 text-left">{cat}</span>
+                          {active && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <span className="order-2 ml-auto sm:ml-0 sm:order-3 inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />{filteredProducts.length} items</span>
         </div>
 
-        <div className="relative z-10 overflow-auto max-h-[700px]">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-20 bg-slate-50">
-              <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[11px] tracking-wider font-extrabold">
-                <th className="px-4 py-3.5">Product</th>
-                <th className="px-4 py-3.5">Supplier</th>
-                <th className="px-4 py-3.5">Category</th>
-                <th className="px-4 py-3.5 text-center">Stock</th>
-                <th className="px-4 py-3.5 text-center">Min Stock</th>
-                <th className="px-4 py-3.5 text-center">Unit Cost</th>
-                <th className="px-4 py-3.5 text-center">Price</th>
-                <th className="px-4 py-3.5 text-center">Expiry</th>
-                <th className="px-4 py-3.5 text-right">Status</th>
-                <th className="px-4 py-3.5 text-right">Ledger</th>
+        <div className="relative z-10 overflow-auto max-h-[700px] rounded-b-3xl">
+          <table className="w-full min-w-[860px] sm:min-w-[1000px] text-left text-[11px] sm:text-xs">
+            <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur shadow-[0_1px_0_0_rgb(226,232,240)]">
+              <tr className="text-slate-500 uppercase text-[10px] tracking-widest font-extrabold">
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5">Product</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5">Supplier</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5">Category</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Stock</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Min Stock</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Unit Cost</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Price</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Expiry</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-right">Status</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-right">Ledger</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredProducts.length > 0 ? filteredProducts.map((p, idx) => {
+              {filteredProducts.length > 0 ? filteredProducts.map((p) => {
                 const stockVal = getStockValue(p);
                 const statusText = p.status || (stockVal > 10 ? 'In Stock' : stockVal > 0 ? 'Low Stock' : 'Out of Stock');
                 const isExpired = statusText === 'Expired';
                 const statusBadge = isExpired
-                  ? 'bg-purple-500/10 text-purple-700 border border-purple-300/40'
+                  ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
                   : statusText === 'Low Stock'
-                  ? 'bg-amber-500/10 text-amber-700 border border-amber-300/40'
+                  ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
                   : stockVal > 0
-                  ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-300/40'
-                  : 'bg-rose-500/10 text-rose-700 border border-rose-300/40';
+                  ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                  : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
+                const accentBar = isExpired ? 'bg-red-500' : statusText === 'Low Stock' ? 'bg-amber-400' : stockVal > 0 ? 'bg-blue-500' : 'bg-rose-400';
+                const stockTone = stockVal <= 0 ? 'bg-rose-50 text-rose-700 ring-rose-100' : statusText === 'Low Stock' ? 'bg-amber-50 text-amber-700 ring-amber-100' : 'bg-blue-50 text-blue-700 ring-blue-100';
 
                 return (
-                  <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
+                  <tr key={p.id} className="group hover:bg-blue-50/40 transition-colors">
+                    <td className="relative px-3 py-2 sm:px-4 sm:py-3.5">
+                      <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity ${accentBar}`} />
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
                           <CategoryIcon category={p.category} className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
@@ -904,10 +902,10 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-slate-500">{p.supplierName || 'N/A'}</td>
-                    <td className="px-4 py-3.5">{p.category}</td>
-                    <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
-                    <td className="px-4 py-3.5 text-center">
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-slate-500">{p.supplierName || 'N/A'}</td>
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5"><span className="inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{p.category}</span></td>
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center"><span className={`inline-flex min-w-[36px] justify-center rounded-lg px-2 py-1 text-[12px] font-extrabold tabular-nums ring-1 ${stockTone}`}>{stockVal}</span></td>
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">
                       {canWrite ? (
                         <MinStockEditor product={p} onUpdated={(updated) => {
                           setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
@@ -916,9 +914,9 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                         <span className="font-semibold text-slate-700">{p.minStock ?? 10}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
-                    <td className="px-4 py-3.5 text-center font-bold text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
-                    <td className="px-4 py-3.5 text-center">
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center tabular-nums text-slate-500">₱{Number(p.unitCost || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center font-extrabold tabular-nums text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">
                       {canWrite ? (
                         <ExpiryEditor product={p} onUpdated={(updated) => {
                           setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
@@ -929,18 +927,18 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-right whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
                         <span className="w-1.5 h-1.5 rounded-full bg-current" />
                         {statusText}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-right whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => setHistoryProduct(p)}
                         title="Stock history"
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-[11px] font-bold cursor-pointer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:border-slate-300 text-[11px] font-bold cursor-pointer transition-colors"
                       >
                         <History className="w-3.5 h-3.5" />
                         History
@@ -950,7 +948,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                           type="button"
                           onClick={() => setAdjustProduct(p)}
                           title="Adjust stock"
-                          className="ml-1.5 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-[11px] font-bold cursor-pointer"
+                          className="ml-1.5 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[11px] font-bold cursor-pointer transition-colors"
                         >
                           <SlidersHorizontal className="w-3.5 h-3.5" />
                           Adjust
@@ -961,7 +959,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                 );
               }) : (
                 <tr>
-                  <td colSpan="10" className="px-4 py-10 text-center text-slate-400 font-semibold">
+                  <td colSpan="10" className="px-4 py-14 text-center text-slate-400 font-semibold">
                     No products found.
                   </td>
                 </tr>
@@ -1163,24 +1161,24 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-3 sm:p-5">
         {/* z-20 so the dropdown (which visually overflows into the card below) always wins the
             stacking tie against the results card's own z-10 header — same reasoning as the category
             filter above the Product List. */}
-        <div className="relative z-20 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="relative z-20 flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-4">
           <div className="w-full md:w-96">
-            <label className="block text-xs font-bold text-blue-600 uppercase tracking-wide mb-1.5">
+            <label className="block text-[10px] sm:text-xs font-bold text-blue-600 uppercase tracking-wide mb-1 sm:mb-1.5">
               Select Supplier for Report
             </label>
             <div className="relative" ref={supplierMenuRef}>
               <button
                 type="button"
                 onClick={() => setSupplierMenuOpen((o) => !o)}
-                className="w-full flex items-center gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-800 pl-4 pr-3 py-3 rounded-2xl text-sm font-semibold hover:border-blue-300 transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-800 pl-3 pr-2.5 sm:pl-4 sm:pr-3 py-2 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-semibold hover:border-blue-300 transition-colors cursor-pointer"
               >
-                <Truck className="w-4 h-4 text-blue-500 shrink-0" />
+                <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500 shrink-0" />
                 <span className="flex-1 text-left truncate">{selectedSupplier ? selectedSupplier.name : '-- Choose Supplier --'}</span>
-                <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${supplierMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0 transition-transform ${supplierMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {supplierMenuOpen && (
@@ -1222,9 +1220,9 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
             <button
               onClick={handleExportReceivingReport}
               disabled={!selectedSupplierId}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs rounded-full shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40 transition-all disabled:opacity-50 disabled:shadow-none cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-[11px] sm:text-xs rounded-full shadow-md shadow-blue-500/30 hover:shadow-lg hover:shadow-blue-500/40 transition-all disabled:opacity-50 disabled:shadow-none cursor-pointer"
             >
-              <Truck className="w-4 h-4" />
+              <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Export Receiving Report</span>
             </button>
           </div>
@@ -1232,20 +1230,20 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
       </div>
 
       <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
-        <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+        <div className="relative z-10 px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-100 flex justify-between items-center gap-2">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
               <BarChart3 className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+            <h2 className="text-[11px] sm:text-xs font-black text-slate-800 uppercase tracking-wide">
               {selectedSupplierId ? 'Products supplied by selected supplier' : 'Select a supplier above to view list'}
             </h2>
           </div>
-          <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">{supplierProducts.length} items found</span>
+          <span className="text-[10px] sm:text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2 sm:px-2.5 py-0.5 sm:py-1 whitespace-nowrap shrink-0 rounded-full">{supplierProducts.length} items found</span>
         </div>
 
-        <div className="relative z-10 overflow-y-auto overflow-x-hidden">
-          <table className="w-full table-fixed text-left text-xs">
+        <div className="relative z-10 overflow-y-auto overflow-x-auto">
+          <table className="w-full min-w-[640px] sm:min-w-[760px] table-fixed text-left text-[11px] sm:text-xs">
             <colgroup>
               <col className="w-[30%]" />
               <col className="w-[15%]" />
@@ -1255,13 +1253,13 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
               <col className="w-[13%]" />
             </colgroup>
             <thead>
-              <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[11px] tracking-wider font-extrabold">
-                <th className="px-4 py-3.5">Product Name</th>
-                <th className="px-4 py-3.5">Category</th>
-                <th className="px-4 py-3.5 text-center">Stock</th>
-                <th className="px-4 py-3.5 text-center">Unit Cost</th>
-                <th className="px-4 py-3.5 text-center">Total Value</th>
-                <th className="px-4 py-3.5 text-center">Batch Date</th>
+              <tr className="text-slate-700 bg-slate-50/80 border-b-2 border-slate-200 uppercase text-[10px] sm:text-[11px] tracking-wider font-extrabold">
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5">Product Name</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5">Category</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Stock</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Unit Cost</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Total Value</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">Batch Date</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/40 font-medium text-slate-700">
@@ -1270,7 +1268,7 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
                   const stockVal = getStockValue(p);
                   return (
                     <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
-                      <td className="px-4 py-3.5">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3.5">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
                             <CategoryIcon category={p.category} className="w-4 h-4" />
@@ -1278,11 +1276,11 @@ function ReportsPage({ products, setProducts, suppliers, exportToExcel }) {
                           <span className="font-semibold text-slate-900 break-words">{p.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 break-words">{p.category}</td>
-                      <td className="px-4 py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
-                      <td className="px-4 py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3.5 text-center font-semibold">₱{(stockVal * Number(p.unitCost || 0)).toFixed(2)}</td>
-                      <td className="px-4 py-3.5 text-center">{p.batchDate}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3.5 break-words">{p.category}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center font-bold text-blue-600">{stockVal}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">₱{Number(p.unitCost || 0).toFixed(2)}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center font-semibold">₱{(stockVal * Number(p.unitCost || 0)).toFixed(2)}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">{p.batchDate}</td>
                     </tr>
                   );
                 })
@@ -1312,6 +1310,22 @@ const LEDGER_TYPE_LABELS = {
   VOID: 'Void (returned)',
 };
 const ledgerPeso = (n) => `₱${Number(n).toFixed(2)}`;
+
+const LEDGER_TYPE_STYLES = {
+  '': { icon: LayoutGrid, chip: 'bg-slate-100 text-slate-500' },
+  OPENING: { icon: Package, chip: 'bg-slate-100 text-slate-600' },
+  PURCHASE_RECEIPT: { icon: Inbox, chip: 'bg-emerald-50 text-emerald-600' },
+  MANUAL_ADD: { icon: PackagePlus, chip: 'bg-blue-50 text-blue-600' },
+  SALE: { icon: ShoppingCart, chip: 'bg-indigo-50 text-indigo-600' },
+  PURCHASE_RETURN: { icon: Truck, chip: 'bg-amber-50 text-amber-600' },
+  ADJUSTMENT: { icon: SlidersHorizontal, chip: 'bg-violet-50 text-violet-600' },
+  VOID: { icon: RotateCcw, chip: 'bg-rose-50 text-rose-600' },
+};
+
+const LEDGER_TYPE_OPTIONS = [
+  { value: '', label: 'All types' },
+  ...Object.entries(LEDGER_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+].map((opt) => ({ ...opt, ...LEDGER_TYPE_STYLES[opt.value] }));
 
 // All-products Subsidiary Ledger / History Report — every stock movement (sales, receiving reports,
 // pull-outs, adjustments, opening stock) across every product, in one place, with each row's
@@ -1413,46 +1427,25 @@ function LedgerReportPage({ exportToExcel }) {
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
-        <div className="flex flex-wrap items-end gap-3">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-3 sm:p-5">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              max={toDate || undefined}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-            />
+            <label className="block text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
+            <DatePicker className="w-full sm:w-auto" value={fromDate} onChange={setFromDate} max={toDate || undefined} placeholder="From" ariaLabel="From date" clearable />
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              min={fromDate || undefined}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-            />
+            <label className="block text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
+            <DatePicker className="w-full sm:w-auto" value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="To" ariaLabel="To date" clearable />
           </div>
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Movement Type</label>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-            >
-              <option value="">All types</option>
-              {Object.entries(LEDGER_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+          <div className="col-span-2 sm:col-span-1">
+            <label className="block text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Movement Type</label>
+            <Dropdown className="w-full sm:w-auto sm:min-w-[190px]" value={typeFilter} onChange={setTypeFilter} options={LEDGER_TYPE_OPTIONS} size="sm" ariaLabel="Movement type" />
           </div>
           {(fromDate || toDate || typeFilter) && (
             <button
               type="button"
               onClick={() => { setFromDate(''); setToDate(''); setTypeFilter(''); }}
-              className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer mb-0.5"
+              className="col-span-2 sm:col-span-1 text-left text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer mb-0.5"
             >
               Clear filters
             </button>
@@ -1461,9 +1454,9 @@ function LedgerReportPage({ exportToExcel }) {
             type="button"
             onClick={handleExport}
             disabled={isExporting}
-            className="ml-auto flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="col-span-2 justify-center sm:justify-start sm:ml-auto flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-[11px] sm:text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+            {isExporting ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />}
             <span>Export</span>
           </button>
         </div>
@@ -1474,27 +1467,27 @@ function LedgerReportPage({ exportToExcel }) {
       )}
 
       <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
-        <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+        <div className="relative z-10 px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-100 flex justify-between items-center">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
               <History className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Every stock movement, across all products</h2>
+            <h2 className="text-[11px] sm:text-xs font-black text-slate-800 uppercase tracking-wide">Every stock movement, across all products</h2>
           </div>
         </div>
 
         <div className="overflow-x-auto overflow-y-auto max-h-[700px]">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+          <table className="w-full min-w-[720px] sm:min-w-[820px] text-left text-[11px] sm:text-xs">
+            <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[9px] sm:text-[10px] tracking-wider border-b-2 border-slate-200">
               <tr>
-                <th className="px-4 py-3">When</th>
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3 text-center">Change</th>
-                <th className="px-4 py-3 text-center">Balance</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3">Reference</th>
-                <th className="px-4 py-3">By</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3">When</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3">Product</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3">Type</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Change</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Balance</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3 text-right">Amount</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3">Reference</th>
+                <th className="px-3 py-2 sm:px-4 sm:py-3">By</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1515,26 +1508,26 @@ function LedgerReportPage({ exportToExcel }) {
               )}
               {movements.map((m) => (
                 <tr key={m.id}>
-                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(m.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500 whitespace-nowrap">{new Date(m.createdAt).toLocaleString()}</td>
+                  <td className="px-3 py-2 sm:px-4 sm:py-3">
                     <p className="font-semibold text-slate-800">{m.product?.name}</p>
                     <p className="text-[10px] text-slate-400 font-mono">{m.product?.barcode}</p>
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap">{LEDGER_TYPE_LABELS[m.type] || m.type}</td>
-                  <td className={`px-4 py-3 text-center font-black ${m.quantity > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <td className="px-3 py-2 sm:px-4 sm:py-3 font-semibold text-slate-700 whitespace-nowrap">{LEDGER_TYPE_LABELS[m.type] || m.type}</td>
+                  <td className={`px-3 py-2 sm:px-4 sm:py-3 text-center font-black ${m.quantity > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                     {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
                   </td>
-                  <td className="px-4 py-3 text-center font-bold text-slate-900">{m.balanceAfter}</td>
-                  <td className="px-4 py-3 text-right text-slate-700 font-semibold whitespace-nowrap">
+                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-center font-bold text-slate-900">{m.balanceAfter}</td>
+                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-right text-slate-700 font-semibold whitespace-nowrap">
                     {m.amount != null ? ledgerPeso(m.amount) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">
+                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500">
                     <LedgerReference movement={m} onOpen={setReceiptTarget} />
                     {m.poNumber && <span className="text-slate-400"> ({m.poNumber})</span>}
                     {m.referenceNo && m.reason ? ' — ' : ''}
                     {m.reason}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">{m.user?.username || '—'}</td>
+                  <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500">{m.user?.username || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1631,10 +1624,10 @@ function MembersPage() {
   }, [members, search]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,320px)_1fr] gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,320px)_1fr] gap-4 sm:gap-6 items-start">
       {/* Member list */}
-      <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100">
+      <div className="bg-white border border-slate-200/80 rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden">
+        <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -1642,19 +1635,19 @@ function MembersPage() {
               placeholder="Search by name or card number..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
             />
           </div>
         </div>
         <div className="max-h-[640px] overflow-y-auto divide-y divide-slate-100">
           {isLoading && (
-            <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-xs">
+            <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-[11px] sm:text-xs">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading members...
             </div>
           )}
-          {error && <div className="p-4 text-rose-600 text-xs font-semibold">{error}</div>}
+          {error && <div className="p-4 text-rose-600 text-[11px] sm:text-xs font-semibold">{error}</div>}
           {!isLoading && !error && filteredMembers.length === 0 && (
-            <div className="flex flex-col items-center gap-2 py-10 text-slate-400 text-xs">
+            <div className="flex flex-col items-center gap-2 py-10 text-slate-400 text-[11px] sm:text-xs">
               <Inbox className="w-6 h-6" />
               <span>No members {search ? 'match your search' : 'registered yet'}.</span>
             </div>
@@ -1663,15 +1656,15 @@ function MembersPage() {
             <button
               key={m.id}
               onClick={() => setSelectedMember(m)}
-              className={`w-full flex items-center justify-between gap-2 p-4 text-left transition-colors cursor-pointer ${
+              className={`w-full flex items-center justify-between gap-2 p-3 sm:p-4 text-left transition-colors cursor-pointer ${
                 selectedMember?.id === m.id ? 'bg-indigo-50' : 'hover:bg-slate-50'
               }`}
             >
               <div className="min-w-0">
-                <div className="text-xs font-bold text-slate-800 truncate">{m.name}</div>
+                <div className="text-[11px] sm:text-xs font-bold text-slate-800 truncate">{m.name}</div>
                 <div className="text-[10px] text-slate-400 font-mono">Card #{m.cardNumber}</div>
               </div>
-              <div className="flex items-center gap-1 shrink-0 text-amber-500 font-black text-xs">
+              <div className="flex items-center gap-1 shrink-0 text-amber-500 font-black text-[11px] sm:text-xs">
                 <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                 {Number(m.points).toFixed(2)}
               </div>
@@ -1681,43 +1674,43 @@ function MembersPage() {
       </div>
 
       {/* Selected member detail + points history */}
-      <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200/80 rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden">
         {!selectedMember ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-24 text-slate-400 text-xs">
-            <Users className="w-8 h-8" />
+          <div className="flex flex-col items-center justify-center gap-2 py-10 sm:py-24 text-slate-400 text-[11px] sm:text-xs">
+            <Users className="w-6 h-6 sm:w-8 sm:h-8" />
             <span>Select a member to see their points history.</span>
           </div>
         ) : (
           <>
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-slate-100 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-sm shadow-blue-500/30 shrink-0">
-                  <Users className="w-5 h-5" />
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-sm shadow-blue-500/30 shrink-0">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-sm font-black text-slate-800 truncate">{selectedMember.name}</h2>
-                  <p className="text-[11px] text-slate-500 font-semibold">
+                  <h2 className="text-xs sm:text-sm font-black text-slate-800 truncate">{selectedMember.name}</h2>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 font-semibold">
                     Card #{selectedMember.cardNumber}
                     {selectedMember.phone ? ` — ${selectedMember.phone}` : ''}
                     {selectedMember.address ? ` — ${selectedMember.address}` : ''}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 bg-amber-50 text-amber-600 font-black text-sm px-3 py-1.5 rounded-full shrink-0">
+              <div className="flex items-center gap-1.5 bg-amber-50 text-amber-600 font-black text-[11px] sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-full shrink-0">
                 <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
                 {Number(selectedMember.points).toFixed(2)} pts
               </div>
             </div>
 
             <div className="overflow-x-auto overflow-y-auto max-h-[560px]">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+              <table className="w-full min-w-[600px] sm:min-w-[700px] text-left text-[11px] sm:text-xs">
+                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[9px] sm:text-[10px] tracking-wider border-b-2 border-slate-200">
                   <tr>
-                    <th className="px-4 py-3">When</th>
-                    <th className="px-4 py-3">Transaction</th>
-                    <th className="px-4 py-3 text-right">Amount Paid</th>
-                    <th className="px-4 py-3 text-center">Points Earned</th>
-                    <th className="px-4 py-3 text-center">Balance After</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3">When</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3">Transaction</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-right">Amount Paid</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Points Earned</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Balance After</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1745,20 +1738,20 @@ function MembersPage() {
                   )}
                   {history.map((h) => (
                     <tr key={h.id}>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(h.createdAt).toLocaleString()}</td>
-                      <td className="px-4 py-3 font-mono text-slate-700">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500 whitespace-nowrap">{new Date(h.createdAt).toLocaleString()}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 font-mono text-slate-700">
                         {h.transaction?.transactionNo || '—'}
                         {h.type === 'VOID' && (
                           <span className="ml-2 px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-sans font-bold">VOIDED</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-700 font-semibold whitespace-nowrap">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-right text-slate-700 font-semibold whitespace-nowrap">
                         {h.transaction ? ledgerPeso(h.transaction.totalAmount) : '—'}
                       </td>
-                      <td className={`px-4 py-3 text-center font-black ${Number(h.points) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      <td className={`px-3 py-2 sm:px-4 sm:py-3 text-center font-black ${Number(h.points) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                         {Number(h.points) < 0 ? '' : '+'}{Number(h.points).toFixed(2)}
                       </td>
-                      <td className="px-4 py-3 text-center font-bold text-slate-900">{Number(h.balanceAfter).toFixed(2)}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center font-bold text-slate-900">{Number(h.balanceAfter).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1859,40 +1852,27 @@ function ReconciliationPage({ exportToExcel }) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
-        <div className="flex flex-wrap items-end gap-3">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="relative overflow-visible bg-white border border-slate-200/80 rounded-3xl shadow-sm p-3 sm:p-5">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
-            <input
-              type="date"
-              value={fromDate}
-              min={RECONCILIATION_FLOOR_DATE}
-              max={toDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-            />
+            <label className="block text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">From</label>
+            <DatePicker className="w-full sm:w-auto" value={fromDate} onChange={setFromDate} min={RECONCILIATION_FLOOR_DATE} max={toDate} placeholder="From" ariaLabel="From date" />
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
-            <input
-              type="date"
-              value={toDate}
-              min={fromDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-            />
+            <label className="block text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
+            <DatePicker className="w-full sm:w-auto" value={toDate} onChange={setToDate} min={fromDate} placeholder="To" ariaLabel="To date" />
           </div>
-          <p className="text-[11px] text-slate-400 font-medium mb-2">
+          <p className="col-span-2 sm:col-span-1 leading-snug text-[10px] sm:text-[11px] text-slate-400 font-medium sm:mb-2">
             Can't start before {RECONCILIATION_FLOOR_DATE} — the historical May–July 2026 sales import has no stock ledger data before then.
           </p>
           <button
             type="button"
             onClick={handleExport}
             disabled={isExporting || !report}
-            className="ml-auto flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="col-span-2 justify-center sm:justify-start sm:ml-auto flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white border border-slate-200/80 text-slate-600 font-semibold text-[11px] sm:text-xs rounded-xl hover:border-indigo-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+            {isExporting ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />}
             <span>Export</span>
           </button>
         </div>
@@ -1911,32 +1891,32 @@ function ReconciliationPage({ exportToExcel }) {
       {!isLoading && !error && report && (
         <>
           {/* Sales cross-check */}
-          <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">Sales Cross-Check</h2>
-              <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+          <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm p-3 sm:p-5">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <h2 className="text-[11px] sm:text-xs font-black text-slate-800 uppercase tracking-wide">Sales Cross-Check</h2>
+              <span className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-bold ${
                 report.sales.mismatch ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
               }`}>
                 {report.sales.mismatch ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                 {report.sales.mismatch ? 'Mismatch found' : 'Reconciled'}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="bg-slate-50 rounded-xl p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 text-xs">
+              <div className="bg-slate-50 rounded-lg sm:rounded-xl p-2 sm:p-3">
                 <div className="text-slate-400 font-semibold text-[10px] uppercase">Transactions</div>
-                <div className="text-slate-900 font-black text-sm mt-0.5">{report.sales.transactionCount}</div>
+                <div className="text-slate-900 font-black text-xs sm:text-sm mt-0.5">{report.sales.transactionCount}</div>
               </div>
-              <div className="bg-slate-50 rounded-xl p-3">
+              <div className="bg-slate-50 rounded-lg sm:rounded-xl p-2 sm:p-3">
                 <div className="text-slate-400 font-semibold text-[10px] uppercase">POS Gross Sales</div>
-                <div className="text-slate-900 font-black text-sm mt-0.5">₱{report.sales.posGrossSales.toFixed(2)}</div>
+                <div className="text-slate-900 font-black text-xs sm:text-sm mt-0.5">₱{report.sales.posGrossSales.toFixed(2)}</div>
               </div>
-              <div className="bg-slate-50 rounded-xl p-3">
+              <div className="bg-slate-50 rounded-lg sm:rounded-xl p-2 sm:p-3">
                 <div className="text-slate-400 font-semibold text-[10px] uppercase">POS Net Sales</div>
-                <div className="text-slate-900 font-black text-sm mt-0.5">₱{report.sales.posNetSales.toFixed(2)}</div>
+                <div className="text-slate-900 font-black text-xs sm:text-sm mt-0.5">₱{report.sales.posNetSales.toFixed(2)}</div>
               </div>
-              <div className={`rounded-xl p-3 ${report.sales.mismatch ? 'bg-rose-50' : 'bg-slate-50'}`}>
+              <div className={`rounded-lg sm:rounded-xl p-2 sm:p-3 ${report.sales.mismatch ? 'bg-rose-50' : 'bg-slate-50'}`}>
                 <div className="text-slate-400 font-semibold text-[10px] uppercase">Ledger Sale Revenue</div>
-                <div className={`font-black text-sm mt-0.5 ${report.sales.mismatch ? 'text-rose-600' : 'text-slate-900'}`}>
+                <div className={`font-black text-xs sm:text-sm mt-0.5 ${report.sales.mismatch ? 'text-rose-600' : 'text-slate-900'}`}>
                   ₱{report.sales.ledgerSaleRevenue.toFixed(2)}
                 </div>
               </div>
@@ -1964,38 +1944,38 @@ function ReconciliationPage({ exportToExcel }) {
 
           {/* Stock math */}
           <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
-            <div className="relative z-10 px-5 py-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2">
+            <div className="relative z-10 px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
                   <Scale className="w-4 h-4 text-white" />
                 </div>
-                <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                <h2 className="text-[11px] sm:text-xs font-black text-slate-800 uppercase tracking-wide">
                   Stock Reconciliation — {report.stock.mismatchCount} of {report.stock.rows.length} products mismatched
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAllRows((v) => !v)}
-                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
+                className="text-[10px] sm:text-[11px] font-bold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
               >
                 {showAllRows ? 'Show only mismatches' : 'Show all products'}
               </button>
             </div>
 
             <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
+              <table className="w-full min-w-[620px] sm:min-w-[700px] text-left text-[11px] sm:text-xs">
+                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[9px] sm:text-[10px] tracking-wider border-b-2 border-slate-200">
                   <tr>
-                    <th className="px-4 py-3">Product</th>
-                    <th className="px-4 py-3 text-center">Opening</th>
-                    <th className="px-4 py-3 text-center">Received</th>
-                    <th className="px-4 py-3 text-center">Returned</th>
-                    <th className="px-4 py-3 text-center">Sold</th>
-                    <th className="px-4 py-3 text-center">Voided</th>
-                    <th className="px-4 py-3 text-center">Adjusted</th>
-                    <th className="px-4 py-3 text-center">Expected</th>
-                    <th className="px-4 py-3 text-center">Actual</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3">Product</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Opening</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Received</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Returned</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Sold</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Voided</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Adjusted</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Expected</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3 text-center">Actual</th>
+                    <th className="px-3 py-2 sm:px-4 sm:py-3">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -2020,21 +2000,21 @@ function ReconciliationPage({ exportToExcel }) {
                   )}
                   {visibleRows.map((r) => (
                     <tr key={r.productId} className={r.mismatch ? 'bg-rose-50/60' : undefined}>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3">
                         <p className="font-semibold text-slate-800">{r.name}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{r.barcode}</p>
                       </td>
-                      <td className="px-4 py-3 text-center text-slate-700">{r.openingStock}</td>
-                      <td className="px-4 py-3 text-center text-emerald-600 font-semibold">{r.received + r.manualAdd > 0 ? `+${r.received + r.manualAdd}` : 0}</td>
-                      <td className="px-4 py-3 text-center text-rose-600 font-semibold">{r.returned > 0 ? `-${r.returned}` : 0}</td>
-                      <td className="px-4 py-3 text-center text-rose-600 font-semibold">{r.sold > 0 ? `-${r.sold}` : 0}</td>
-                      <td className={`px-4 py-3 text-center font-semibold ${r.voided > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{r.voided > 0 ? `+${r.voided}` : 0}</td>
-                      <td className={`px-4 py-3 text-center font-semibold ${r.adjustment > 0 ? 'text-emerald-600' : r.adjustment < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center text-slate-700">{r.openingStock}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center text-emerald-600 font-semibold">{r.received + r.manualAdd > 0 ? `+${r.received + r.manualAdd}` : 0}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center text-rose-600 font-semibold">{r.returned > 0 ? `-${r.returned}` : 0}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center text-rose-600 font-semibold">{r.sold > 0 ? `-${r.sold}` : 0}</td>
+                      <td className={`px-3 py-2 sm:px-4 sm:py-3 text-center font-semibold ${r.voided > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{r.voided > 0 ? `+${r.voided}` : 0}</td>
+                      <td className={`px-3 py-2 sm:px-4 sm:py-3 text-center font-semibold ${r.adjustment > 0 ? 'text-emerald-600' : r.adjustment < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
                         {r.adjustment > 0 ? `+${r.adjustment}` : r.adjustment}
                       </td>
-                      <td className="px-4 py-3 text-center font-bold text-slate-900">{r.expectedClosing}</td>
-                      <td className="px-4 py-3 text-center font-bold text-slate-900">{r.actualClosing}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center font-bold text-slate-900">{r.expectedClosing}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3 text-center font-bold text-slate-900">{r.actualClosing}</td>
+                      <td className="px-3 py-2 sm:px-4 sm:py-3">
                         {r.mismatch ? (
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-600 w-fit">
                             <AlertTriangle className="w-3 h-3" /> Mismatch

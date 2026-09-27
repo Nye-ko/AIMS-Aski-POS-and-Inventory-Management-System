@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
+import Dropdown from '../../components/Dropdown';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const FALLBACK_REASONS = ['Damaged', 'Expired', 'Lost/Theft', 'Pull Out', 'Bad Order', 'Printing Forms', 'Retail', 'For Adjustment'];
@@ -109,11 +110,12 @@ export default function AdjustStockModal({ product, onClose, onAdjusted }) {
 
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Remarks</label>
-            <select value={reason} onChange={(e) => setReason(e.target.value)} className={fieldClass}>
-              {reasons.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
+            <Dropdown
+              value={reason}
+              onChange={setReason}
+              options={reasons.map((r) => ({ value: r, label: r }))}
+              ariaLabel="Remarks"
+            />
           </div>
 
           <div>

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import AuditLogPanel from './AuditLogPanel';
+import Dropdown from '../../components/Dropdown';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -327,14 +328,14 @@ export default function UserManagement() {
   return (
     <div className="space-y-6">
       {/* ===== HEADER ===== */}
-      <header className="relative z-30 flex items-center justify-between bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-8 py-4 shadow-xl shadow-blue-500/10">
+      <header className="relative z-30 mb-6 lg:mb-12 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white via-white/90 to-blue-200/60 backdrop-blur-xl border border-white/80 rounded-3xl px-4 sm:px-8 py-3 sm:py-4 shadow-xl shadow-blue-500/10">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30">
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC POS</p>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight">USER ACCOUNT MANAGEMENT</h2>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">AMPC</p>
+            <h2 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">USER ACCOUNT MANAGEMENT</h2>
           </div>
         </div>
       </header>
@@ -366,17 +367,17 @@ export default function UserManagement() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* ===== CREATE FORM ===== */}
         <div className="lg:col-span-1 relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm h-fit">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2.5">
+          <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-100 flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
               <UserPlus className="w-4 h-4 text-white" />
             </div>
-            <h3 className="text-sm font-black text-slate-800 tracking-tight">Create User Account</h3>
+            <h3 className="text-xs sm:text-sm font-black text-slate-800 tracking-tight">Create User Account</h3>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
             {formError && (
               <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">
                 {formError}
@@ -384,52 +385,49 @@ export default function UserManagement() {
             )}
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5">Full Name</label>
+              <label className="block text-[11px] sm:text-xs font-bold text-slate-600 mb-1 sm:mb-1.5">Full Name</label>
               <input
                 type="text"
                 value={form.fullName}
                 onChange={handleFieldChange('fullName')}
                 placeholder="e.g., Juan Dela Cruz"
-                className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-1.5 sm:px-3.5 sm:py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5">Role</label>
-              <select
+              <label className="block text-[11px] sm:text-xs font-bold text-slate-600 mb-1 sm:mb-1.5">Role</label>
+              <Dropdown
                 value={form.role}
-                onChange={handleFieldChange('role')}
-                className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-              >
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                onChange={(next) => handleFieldChange('role')({ target: { value: next } })}
+                options={ROLE_OPTIONS}
+                ariaLabel="Role"
+              />
               <p className="mt-1 text-[11px] text-slate-500">
                 {ROLE_OPTIONS.find((r) => r.value === form.role)?.hint}
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5">Username</label>
+              <label className="block text-[11px] sm:text-xs font-bold text-slate-600 mb-1 sm:mb-1.5">Username</label>
               <input
                 type="text"
                 value={form.username}
                 onChange={handleFieldChange('username')}
                 placeholder="e.g., cashier_juan"
-                className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-1.5 sm:px-3.5 sm:py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5">Password</label>
+              <label className="block text-[11px] sm:text-xs font-bold text-slate-600 mb-1 sm:mb-1.5">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={form.password}
                   onChange={handleFieldChange('password')}
                   placeholder="At least 6 characters"
-                  className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 pr-10 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
+                  className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-1.5 sm:px-3.5 sm:py-2.5 pr-10 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
                 />
                 <button
                   type="button"
@@ -453,14 +451,14 @@ export default function UserManagement() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5">Confirm Password</label>
+              <label className="block text-[11px] sm:text-xs font-bold text-slate-600 mb-1 sm:mb-1.5">Confirm Password</label>
               <div className="relative">
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={form.confirmPassword}
                   onChange={handleFieldChange('confirmPassword')}
                   placeholder="Re-enter password"
-                  className={`w-full rounded-xl bg-slate-50 border px-3.5 py-2.5 pr-10 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 transition-all ${
+                  className={`w-full rounded-xl bg-slate-50 border px-3 py-1.5 sm:px-3.5 sm:py-2.5 pr-10 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 transition-all ${
                     passwordsMatch ? 'border-slate-200 focus:ring-blue-500' : 'border-rose-300 focus:ring-rose-500'
                   }`}
                 />
@@ -481,7 +479,7 @@ export default function UserManagement() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex-1 flex items-center justify-center gap-2 bg-[#0B132B] hover:bg-slate-800 text-white rounded-xl px-4 py-2.5 font-bold text-xs shadow-lg shadow-slate-900/20 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="flex-1 flex items-center justify-center gap-2 bg-[#0B132B] hover:bg-slate-800 text-white rounded-xl px-4 py-2 sm:py-2.5 font-bold text-xs shadow-lg shadow-slate-900/20 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {isSubmitting ? 'Creating...' : 'Create User Account'}
@@ -489,7 +487,7 @@ export default function UserManagement() {
               <button
                 type="button"
                 onClick={handleReset}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-50 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5 bg-white border border-slate-200 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-50 transition cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Clear
@@ -500,12 +498,12 @@ export default function UserManagement() {
 
         {/* ===== USERS TABLE ===== */}
         <div className="lg:col-span-2 relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl shadow-sm">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/30">
                 <ShieldCheck className="w-4 h-4 text-white" />
               </div>
-              <h3 className="text-sm font-black text-slate-800 tracking-tight">System User Accounts</h3>
+              <h3 className="text-xs sm:text-sm font-black text-slate-800 tracking-tight">System User Accounts</h3>
               <span className="text-[11px] text-blue-700 font-bold bg-blue-500/10 border border-blue-200/50 px-2.5 py-1 rounded-full">
                 {users.length}
               </span>
@@ -519,15 +517,15 @@ export default function UserManagement() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full min-w-[720px] text-left text-[11px] sm:text-xs">
               <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
                 <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Username</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Created Date</th>
-                  <th className="px-4 py-3">Actions</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Name</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Username</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Role</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Status</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Created Date</th>
+                  <th className="px-3 py-2 sm:px-4 sm:py-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -558,20 +556,19 @@ export default function UserManagement() {
                     const isBusy = rowBusyId === u.id;
                     return (
                       <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 font-bold text-slate-800">{u.fullName || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600 font-medium">{u.username}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2 sm:px-4 sm:py-3 font-bold text-slate-800">{u.fullName || '—'}</td>
+                        <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-600 font-medium">{u.username}</td>
+                        <td className="px-3 py-2 sm:px-4 sm:py-3">
                           {editingRoleId === u.id ? (
                             <div className="flex items-center gap-1.5">
-                              <select
+                              <Dropdown
+                                className="min-w-[150px]"
+                                size="sm"
                                 value={roleDraft}
-                                onChange={(e) => setRoleDraft(e.target.value)}
-                                className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                              >
-                                {ROLE_OPTIONS.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                              </select>
+                                onChange={setRoleDraft}
+                                options={ROLE_OPTIONS}
+                                ariaLabel="Role"
+                              />
                               <button
                                 onClick={() => saveRole(u)}
                                 disabled={isBusy}
@@ -599,7 +596,7 @@ export default function UserManagement() {
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2 sm:px-4 sm:py-3">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
                             u.isActive
                               ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-300/40'
@@ -609,10 +606,10 @@ export default function UserManagement() {
                             {u.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-500 font-medium">
+                        <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500 font-medium">
                           {new Date(u.createdAt).toLocaleDateString()}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2 sm:px-4 sm:py-3">
                           <div className="flex items-center gap-1.5">
                             <button
                               title="Reset Password"

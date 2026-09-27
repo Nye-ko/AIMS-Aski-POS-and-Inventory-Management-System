@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import DatePicker from '../../components/DatePicker';
 import { createPortal } from 'react-dom';
 import { X, History, Loader2, Inbox, Download, Layers } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
@@ -172,21 +173,9 @@ export default function StockHistoryModal({ product, onClose, exportToExcel }) {
           <div className="flex items-center gap-2 shrink-0">
             {tab === 'ledger' && (
               <>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  max={toDate || undefined}
-                  className="bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-                />
+                <DatePicker value={fromDate} onChange={setFromDate} max={toDate || undefined} placeholder="From" ariaLabel="From date" clearable />
                 <span className="text-slate-400 text-xs">to</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  min={fromDate || undefined}
-                  className="bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-                />
+                <DatePicker value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="To" ariaLabel="To date" clearable />
                 {(fromDate || toDate) && (
                   <button
                     type="button"
@@ -238,7 +227,7 @@ export default function StockHistoryModal({ product, onClose, exportToExcel }) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
           {error && tab === 'ledger' && (
             <div className="mb-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">{error}</div>
           )}
@@ -248,7 +237,7 @@ export default function StockHistoryModal({ product, onClose, exportToExcel }) {
           {tab === 'ledger' && (
           <>
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-left text-xs">
+            <table className="w-full min-w-[640px] text-left text-xs">
               <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
                 <tr>
                   <th className="px-4 py-3">When</th>
@@ -320,7 +309,7 @@ export default function StockHistoryModal({ product, onClose, exportToExcel }) {
                 <div className="mb-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">{batchesError}</div>
               )}
               <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-left text-xs">
+                <table className="w-full min-w-[640px] text-left text-xs">
                   <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
                     <tr>
                       <th className="px-4 py-3">Received</th>

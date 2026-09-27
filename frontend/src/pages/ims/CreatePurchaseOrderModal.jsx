@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
 import SupplierCombobox from './SupplierCombobox';
+import Dropdown from '../../components/Dropdown';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const VAT_RATE = 0.12;
@@ -422,7 +423,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           {isEditMode && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-[11px] font-semibold text-blue-700">
               This purchase order is a saved draft. It can't be received until you submit it.
@@ -490,16 +491,21 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, products, mo
               </div>
               <div>
                 <label className={fieldLabelClass}>Tagging</label>
-                <select disabled={isViewMode} value={tagging} onChange={(e) => setTagging(e.target.value)} className={darkFieldClass}>
-                  <option value="" disabled>Select store…</option>
-                  {/* Orders saved before the store list existed keep their old tag (e.g. "Regular"). */}
-                  {tagging && !TAGGING_OPTIONS.includes(tagging) && (
-                    <option value={tagging} disabled>{tagging} (old tag)</option>
-                  )}
-                  {TAGGING_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
+                <Dropdown
+                  disabled={isViewMode}
+                  panelTone="dark"
+                  value={tagging}
+                  onChange={setTagging}
+                  placeholder="Select store…"
+                  ariaLabel="Tagging"
+                  options={[
+                    // Orders saved before the store list existed keep their old tag (e.g. "Regular").
+                    ...(tagging && !TAGGING_OPTIONS.includes(tagging)
+                      ? [{ value: tagging, label: `${tagging} (old tag)`, disabled: true }]
+                      : []),
+                    ...TAGGING_OPTIONS.map((opt) => ({ value: opt, label: opt })),
+                  ]}
+                />
               </div>
               <div>
                 <label className={fieldLabelClass}>Purpose</label>

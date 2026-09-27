@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { History, Loader2, Inbox } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
+import Dropdown from '../../components/Dropdown';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 const PAGE_SIZE = 50;
@@ -78,37 +79,38 @@ export default function AuditLogPanel({ refreshKey = 0 }) {
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm p-5 space-y-4">
+    <div className="bg-white border border-slate-200/80 rounded-3xl shadow-sm p-4 sm:p-5 space-y-3 sm:space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-slate-100 text-slate-600">
             <History className="w-4 h-4" />
           </div>
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Activity Log</h3>
+          <h3 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wide">Activity Log</h3>
         </div>
-        <select
+        <Dropdown
+          className="min-w-[170px] sm:min-w-[200px]"
+          size="sm"
           value={action}
-          onChange={(e) => handleFilterChange(e.target.value)}
-          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700"
-        >
-          <option value="">All actions</option>
-          {Object.entries(ACTION_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+          onChange={handleFilterChange}
+          options={[
+            { value: '', label: 'All actions' },
+            ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
+          ariaLabel="Filter by action"
+        />
       </div>
 
       {error && <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">{error}</div>}
 
       <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-        <table className="w-full text-left text-xs">
+        <table className="w-full min-w-[600px] text-left text-[11px] sm:text-xs">
           <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
             <tr>
-              <th className="px-4 py-3">When</th>
-              <th className="px-4 py-3">Action</th>
-              <th className="px-4 py-3">Account</th>
-              <th className="px-4 py-3">Details</th>
-              <th className="px-4 py-3">By</th>
+              <th className="px-3 py-2 sm:px-4 sm:py-3">When</th>
+              <th className="px-3 py-2 sm:px-4 sm:py-3">Action</th>
+              <th className="px-3 py-2 sm:px-4 sm:py-3">Account</th>
+              <th className="px-3 py-2 sm:px-4 sm:py-3">Details</th>
+              <th className="px-3 py-2 sm:px-4 sm:py-3">By</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -124,11 +126,11 @@ export default function AuditLogPanel({ refreshKey = 0 }) {
             )}
             {rows.map((row) => (
               <tr key={row.id}>
-                <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(row.createdAt).toLocaleString()}</td>
-                <td className="px-4 py-3 font-semibold text-slate-700">{ACTION_LABELS[row.action] || row.action}</td>
-                <td className="px-4 py-3 text-slate-700">{row.targetUsername || '—'}</td>
-                <td className="px-4 py-3 text-slate-500">{describe(row)}</td>
-                <td className="px-4 py-3 text-slate-500">{row.actorUsername}</td>
+                <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500 whitespace-nowrap">{new Date(row.createdAt).toLocaleString()}</td>
+                <td className="px-3 py-2 sm:px-4 sm:py-3 font-semibold text-slate-700">{ACTION_LABELS[row.action] || row.action}</td>
+                <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-700">{row.targetUsername || '—'}</td>
+                <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500">{describe(row)}</td>
+                <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500">{row.actorUsername}</td>
               </tr>
             ))}
           </tbody>

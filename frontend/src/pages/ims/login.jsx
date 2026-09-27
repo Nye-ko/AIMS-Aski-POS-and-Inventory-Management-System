@@ -48,7 +48,7 @@ export default function Login() {
         className="custom-jakarta min-h-screen flex items-center justify-center antialiased bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: `url('/blue-bg2.jpg')` }}
       >
-        <div className="w-full max-w-md mx-4 p-8 rounded-3xl bg-white/30 backdrop-blur-xl border border-white/100 shadow-2xl transition-all duration-500 hover:shadow-[0_0_40px_rgba(56,189,248,0.5)] hover:border-white/100 hover:bg-white/35">
+        <div className="w-full max-w-md mx-4 p-6 sm:p-8 rounded-3xl bg-white/30 backdrop-blur-xl border border-white/100 shadow-2xl transition-all duration-500 hover:shadow-[0_0_40px_rgba(56,189,248,0.5)] hover:border-white/100 hover:bg-white/35">
           <div className="flex justify-center mb-4">
             <img
               src="/aski.png"

@@ -842,7 +842,6 @@ const handleConfirmSale = async () => {
           <div className="flex-1 flex flex-col min-h-[520px] lg:min-h-0 bg-indigo-50/40 rounded-2xl p-4 border border-indigo-100">
             <div className="flex items-center justify-between mb-3 shrink-0">
               <h2 className="text-sm font-bold text-slate-800">Product Catalog</h2>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
             </div>
 
             {/* Controls Bar */}
