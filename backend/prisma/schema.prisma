@@ -182,6 +182,9 @@ model Transaction {
   supervisorAuthorized Boolean       @default(false)
   totalAmount          Decimal       @db.Decimal(10, 2)
   paymentMethod        PaymentMethod @default(CASH)
+  // Card/e-wallet transaction reference (from the terminal or the customer's app). Required at
+  // checkout for CARD/E_wallet sales, always null for CASH — see TransactionModel.createCheckout.
+  referenceNumber      String?
 
   cashierId Int
   cashier   User @relation("TransactionCashier", fields: [cashierId], references: [id])

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Search, Loader2, Ban, Printer, ChevronLeft, Lock } from 'lucide-react';
 import { apiFetch } from '../auth/apiFetch';
 
-const API = 'http://localhost:5000/api';
+import { API_BASE_URL as API } from '../config';
 const PAYMENT_LABELS = { CASH: 'Cash', CARD: 'Card', E_wallet: 'E-wallet' };
 const php = (n) => `PHP ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

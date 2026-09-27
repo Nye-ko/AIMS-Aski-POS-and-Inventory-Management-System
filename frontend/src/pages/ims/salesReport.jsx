@@ -4,7 +4,7 @@ import { apiFetch } from '../../auth/apiFetch';
 import { exportToExcel } from '../../utils/exportExcel';
 import MonthPicker from '../../components/MonthPicker';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 const peso = (n) => {
   const v = Number(n);
   return `${v < 0 ? '-' : ''}₱${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -69,6 +69,7 @@ export default function SalesReport() {
         'Discount (₱)': r.discountAmount == null ? '' : Number(r.discountAmount).toFixed(2),
         'Total (₱)': Number(r.totalAmount).toFixed(2),
         'Payment Method': PAYMENT_LABELS[r.paymentMethod] || r.paymentMethod,
+        'Reference #': r.referenceNumber || '',
         'Cashier': r.cashier || '',
         'Void Reason': r.reason || '',
       }));
@@ -168,13 +169,14 @@ export default function SalesReport() {
                 <th className="px-2.5 py-2 sm:px-4 sm:py-3.5 text-right">Discount</th>
                 <th className="px-2.5 py-2 sm:px-4 sm:py-3.5 text-right">Total</th>
                 <th className="px-2.5 py-2 sm:px-4 sm:py-3.5">Payment</th>
+                <th className="px-2.5 py-2 sm:px-4 sm:py-3.5">Reference #</th>
                 <th className="px-3 py-2 sm:px-5 sm:py-3.5">Cashier</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {!isLoading && !error && rows.length === 0 && (
                 <tr>
-                  <td colSpan="8" className="px-4 py-14 text-center text-slate-400">
+                  <td colSpan="9" className="px-4 py-14 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
                         <Inbox className="w-6 h-6" />
@@ -227,6 +229,13 @@ export default function SalesReport() {
                         <span className={`w-1.5 h-1.5 rounded-full ${pay.dot}`} />
                         {PAYMENT_LABELS[r.paymentMethod] || r.paymentMethod}
                       </span>
+                    </td>
+                    <td className="px-2.5 py-2 sm:px-4 sm:py-3.5">
+                      {r.referenceNumber ? (
+                        <span className="font-mono text-[11px] font-semibold px-2 py-1 rounded-md bg-slate-100 text-slate-700">{r.referenceNumber}</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 sm:px-5 sm:py-3.5">
                       <span className="inline-flex items-center gap-2 text-slate-600 font-medium">

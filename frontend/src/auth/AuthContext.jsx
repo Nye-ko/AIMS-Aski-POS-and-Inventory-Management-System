@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../config';
 const STORAGE_KEY = 'aims.auth';
 
 // eslint-disable-next-line react-refresh/only-export-components

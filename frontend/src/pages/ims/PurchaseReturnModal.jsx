@@ -7,7 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { apiFetch } from '../../auth/apiFetch';
 import Dropdown from '../../components/Dropdown';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 const REASON_OPTIONS = ['Damaged', 'Expired', 'Incorrect Item', 'Overstock', 'Retail'];
 
 async function downloadPurchaseReturnFile(purchaseReturn) {

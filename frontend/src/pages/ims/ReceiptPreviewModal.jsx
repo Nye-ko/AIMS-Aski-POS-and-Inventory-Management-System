@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Receipt, Printer, Loader2 } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 
 const PRINT_MESSAGES = {
   not_configured: 'No receipt printer is set up on the server (RECEIPT_PRINTER_INTERFACE in backend/.env), so nothing was printed.',

@@ -20,7 +20,7 @@ import { useAuth } from '../../auth/AuthContext';
 import AuditLogPanel from './AuditLogPanel';
 import Dropdown from '../../components/Dropdown';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 
 const ROLE_OPTIONS = [
   { value: 'CASHIER', label: 'Cashier', hint: 'Front-of-house POS access' },

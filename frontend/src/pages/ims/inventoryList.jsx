@@ -34,8 +34,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { buildInventorySheets } from '../../utils/inventorySheets';
 import { exportToExcel } from '../../utils/exportExcel';
 
-const API_BASE_URL = 'http://localhost:5000/api';
-const SOCKET_SERVER_URL = 'http://localhost:5000';
+import { API_BASE_URL, SERVER_URL as SOCKET_SERVER_URL } from '../../config';
 
 // Surface the server's own error message (e.g. "Barcode ... is already used by ...") instead of a bare status.
 const throwApiError = async (response) => {
@@ -153,7 +152,8 @@ export default function InventorySystem() {
             }`}
           >
             <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Inventory List</span>
+            <span className="sm:hidden">Inventory</span>
+            <span className="hidden sm:inline">Inventory List</span>
           </button>
 
           <button
@@ -165,7 +165,8 @@ export default function InventorySystem() {
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Supplier Reports</span>
+            <span className="sm:hidden">Reports</span>
+            <span className="hidden sm:inline">Supplier Reports</span>
           </button>
 
           <button
@@ -177,7 +178,8 @@ export default function InventorySystem() {
             }`}
           >
             <History className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Ledger / History</span>
+            <span className="sm:hidden">Ledger</span>
+            <span className="hidden sm:inline">Ledger / History</span>
           </button>
 
           <button
@@ -201,7 +203,8 @@ export default function InventorySystem() {
             }`}
           >
             <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Reconciliation</span>
+            <span className="sm:hidden">Recon.</span>
+            <span className="hidden sm:inline">Reconciliation</span>
           </button>
         </div>
       </header>

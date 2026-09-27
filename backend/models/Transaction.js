@@ -64,6 +64,7 @@ const TransactionModel = {
       discountAmount: Number(t.discountAmount),
       totalAmount: Number(t.totalAmount),
       paymentMethod: t.paymentMethod,
+      referenceNumber: t.referenceNumber || null,
     };
   },
 
@@ -108,6 +109,7 @@ const TransactionModel = {
         discountAmount: t.discountAmount,
         totalAmount: t.totalAmount,
         paymentMethod: t.paymentMethod,
+        referenceNumber: t.referenceNumber || null,
         cashier: t.cashier?.username || null,
         voidNo: t.saleVoid?.voidNo || null,
       }));
@@ -154,7 +156,7 @@ const TransactionModel = {
   // Prices, totals and the discount are recomputed here from the database — the
   // client only says which products, how many, and which discount % it was approved for.
   createCheckout: async (payload, io) => {
-    const { items, discountPercent, totalAmount: clientTotal, paymentMethod, cashierId, approvalToken, memberId } = payload;
+    const { items, discountPercent, totalAmount: clientTotal, paymentMethod, cashierId, approvalToken, memberId, referenceNumber } = payload;
 
     // cashierId is set by the route handler from the authenticated user's
     // JWT (see authenticateToken in models/Auth.js) — verify it still
@@ -168,6 +170,16 @@ const TransactionModel = {
     }
 
     const method = normalizePaymentMethod(paymentMethod);
+
+    // Card/e-wallet sales must carry the terminal/app's reference number; cash never has one.
+    const trimmedRef = typeof referenceNumber === 'string' ? referenceNumber.trim() : '';
+    if (method !== 'CASH' && !trimmedRef) {
+      throw new CheckoutError(400, 'A reference number is required for Card and E-wallet payments.', 'REFERENCE_NUMBER_REQUIRED');
+    }
+    if (trimmedRef.length > 50) {
+      throw new CheckoutError(400, 'Reference number is too long (max 50 characters).');
+    }
+    const finalRef = method === 'CASH' ? null : trimmedRef;
 
     if (!Array.isArray(items) || items.length === 0) {
       throw new CheckoutError(400, 'Cart is empty.');
@@ -254,6 +266,7 @@ const TransactionModel = {
           approvedById: approval ? approval.approverId : null,
           totalAmount: totalCents / 100,
           paymentMethod: method,
+          referenceNumber: finalRef,
           cashierId: validCashierId,
           memberId: member ? member.id : null,
           items: {

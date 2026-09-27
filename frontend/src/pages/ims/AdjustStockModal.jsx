@@ -4,7 +4,7 @@ import { X, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
 import Dropdown from '../../components/Dropdown';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 const FALLBACK_REASONS = ['Damaged', 'Expired', 'Lost/Theft', 'Pull Out', 'Bad Order', 'Printing Forms', 'Retail', 'For Adjustment'];
 
 const fieldClass =

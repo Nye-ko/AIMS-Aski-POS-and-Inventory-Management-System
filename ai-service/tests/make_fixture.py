@@ -54,6 +54,14 @@ def build_input():
     sales.append({"sku": "GHOST", "date": (AS_OF - timedelta(days=3)).isoformat(), "quantity": 5, "revenue": 50.0})
     totals = [t for t in totals if t["date"] < AS_OF.isoformat()]
 
+    # A day with no sales anywhere in the store at all (not one of STEADY-1's own stock-out days --
+    # those are offsets 3, 4, 10, 11, below -- this is a day it would otherwise have sold on). It
+    # should be skipped like a stock-out, not counted as zero demand: this excludes it from every
+    # product's rate, not just STEADY-1's.
+    idle_day = (AS_OF - timedelta(days=15)).isoformat()
+    sales = [s for s in sales if s["date"] != idle_day]
+    totals = [t for t in totals if t["date"] != idle_day]
+
     # Out-of-stock days. STEADY-1 was out for four days (skipped when learning its rate). SPARSE-1 was out
     # for 24 of its last 28 days, too few left to learn from, so it must be ignored. A day outside the
     # window and an unknown product are ignored too.

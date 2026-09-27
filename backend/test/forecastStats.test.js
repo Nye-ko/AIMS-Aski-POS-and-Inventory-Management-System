@@ -33,12 +33,16 @@ test('rangeForTotal follows the formula, floors at zero and applies Poisson only
 const asOf = '2026-09-21';
 const daysBack = (k) => new Date(Date.parse(`${asOf}T00:00:00Z`) - k * 86400000).toISOString().slice(0, 10);
 const product = { id: 1, sku: 'A', name: 'A', category: 'Cat', stock: 0, minStock: 0, expiryDate: null, createdAt: '2026-01-01' };
+// A filler product sells every day regardless of A's gaps, so the store itself is never idle on a
+// gap day -- it's "A had no demand that day", not "the store recorded nothing at all that day".
+const filler = { ...product, id: 2, sku: 'FILLER' };
 const run = (gaps, stockouts) => {
   const sales = [];
   for (let k = 1; k <= 28; k += 1) {
     if (!gaps.includes(k)) sales.push({ sku: 'A', date: daysBack(k), quantity: 4, revenue: 40 });
+    sales.push({ sku: 'FILLER', date: daysBack(k), quantity: 1, revenue: 1 });
   }
-  return buildForecast({ asOf, daysToForecast: 30, products: [product], sales, dailyTotals: [], stockouts }).skuDemandList[0];
+  return buildForecast({ asOf, daysToForecast: 30, products: [product, filler], sales, dailyTotals: [], stockouts }).skuDemandList[0];
 };
 
 test('days out of stock are not counted as zero demand', () => {

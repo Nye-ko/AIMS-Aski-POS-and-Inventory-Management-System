@@ -16,7 +16,7 @@ import { apiFetch } from '../../auth/apiFetch';
 import SupplierCombobox from './SupplierCombobox';
 import Dropdown from '../../components/Dropdown';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 const VAT_RATE = 0.12;
 const TAGGING_OPTIONS = ['COOP STORE', 'WATER HOPE', 'COCA COLA', 'JAZZ EAT', 'BIGASAN', 'PRINTING'];
 

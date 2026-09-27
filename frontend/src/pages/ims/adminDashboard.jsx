@@ -6,7 +6,7 @@ import NotificationPanel from './NotificationPanel';
 import { useAlertNotifications } from '../../hooks/useAlertNotifications';
 import { apiFetch, getAuthToken } from '../../auth/apiFetch';
 
-const SOCKET_SERVER_URL = 'http://localhost:5000';
+import { SERVER_URL as SOCKET_SERVER_URL } from '../../config';
 
 export default function Dashboard() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);

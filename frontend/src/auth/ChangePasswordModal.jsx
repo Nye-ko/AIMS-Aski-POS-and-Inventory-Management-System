@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, KeyRound, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
 import { apiFetch } from './apiFetch';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../config';
 const MIN_LENGTH = 6;
 
 const fieldClass =

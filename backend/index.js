@@ -69,9 +69,13 @@ app.use((req, res, next) => {
 
 const server = http.createServer(app);
 
+// Always allow the normal local dev origin; FRONTEND_URL (comma-separated) adds more without
+// replacing it — e.g. a VS Code port-forwarded/tunneled URL when testing from another device.
+const socketOrigins = ['http://localhost:5173', ...String(process.env.FRONTEND_URL || '').split(',').map((s) => s.trim()).filter(Boolean)];
+
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:5173',
+    origin: socketOrigins,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   },
 });
@@ -819,6 +823,7 @@ app.post('/api/transactions', authenticateToken, requireRole(...ROLES.POS), asyn
         discountAmount: result.discountAmount,
         totalAmount: result.totalAmount,
         paymentMethod: result.paymentMethod,
+        referenceNumber: result.referenceNumber,
         amountPaid: req.body.amountPaid ?? result.totalAmount,
       })
       .catch((err) => console.error('[receipt-printer] Unexpected print error:', err.message));

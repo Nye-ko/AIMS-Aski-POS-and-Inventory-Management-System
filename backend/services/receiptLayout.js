@@ -187,6 +187,8 @@ function buildSaleReceipt(sale, { reprintedAt } = {}) {
   lines.push(pair('TOTAL', money(totalAmount), { bold: true }));
   if (String(sale.paymentMethod || '').toUpperCase() === 'CASH') {
     lines.push(pair('CASH', money(amountPaid)), pair('CHANGE', money(Math.max(0, amountPaid - totalAmount))));
+  } else if (sale.referenceNumber) {
+    lines.push(text(`Ref #: ${sale.referenceNumber}`));
   }
 
   lines.push(

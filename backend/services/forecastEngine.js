@@ -9,7 +9,11 @@
 // zero days included but days it was out of stock skipped; store revenue uses the last 14 days; every
 // forecast carries an 80% range. Reorder decisions (2.1.0): reorder point = expected demand over the
 // supplier's lead time + 95% safety stock, never below minStock; flagged when on hand + on order is at
-// or below it. See the header of ai-service/forecast_engine.py for the reasoning.
+// or below it. A day with no sales anywhere in the store (not one product's stock-out, but the whole
+// store recording nothing -- e.g. a gap between an imported history and this system going live) is
+// skipped the same way, so it never gets counted as "zero demand" -- unless too little real trading
+// history would be left in the window, in which case it falls back to counting it as zero, same as
+// before. See the header of ai-service/forecast_engine.py for the reasoning.
 //
 // Money is summed in integer cents so results do not depend on row order. Dates are ISO "YYYY-MM-DD"
 // strings in the store's local time zone.
@@ -146,23 +150,37 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
   let storeVariance = null;
   let discountRatio = 0;
   let growthPct = null;
+  let idleDays = 0; // days with no sales anywhere in the store, actually skipped (reported in meta)
   if (storeStart !== null) {
     const first = Math.max(storeStart, windowEnd - RATE_WINDOW_DAYS + 1);
+    const spanDays = windowEnd - first + 1;
+    let idleInSpan = 0;
+    for (let d = first; d <= windowEnd; d += 1) if (!storeDays.has(d)) idleInSpan += 1;
+    // A day with no sales anywhere in the store (not just one product out of stock) says nothing
+    // about demand -- the store simply wasn't recording sales that day (e.g. a gap between an
+    // imported history and this system going live). Skip it like a stock-out, unless doing so
+    // would leave too little real trading history in the window to learn from.
+    const skipIdle = idleInSpan > 0 && spanDays - idleInSpan >= MIN_USABLE_DAYS;
+    if (skipIdle) idleDays = idleInSpan;
     const recent = [];
-    for (let d = first; d <= windowEnd; d += 1) recent.push(storeGross(d));
+    for (let d = first; d <= windowEnd; d += 1) recent.push(skipIdle && !storeDays.has(d) ? null : storeGross(d));
     const level = windowMean(recent, REVENUE_WINDOW_DAYS);
-    rateCents = level.mean;
-    levelDays = level.count;
+    rateCents = level ? level.mean : 0;
+    levelDays = level ? level.count : 1;
     storeVariance = sampleVariance(recent);
 
     const totalGross = sum([...storeDays.values()].map((v) => v[0]));
     const totalDiscount = sum([...storeDays.values()].map((v) => v[1]));
     discountRatio = totalGross > 0 ? totalDiscount / totalGross : 0;
-    const histAvg = totalGross / observedDays;
+    // Trading days only, not the calendar span -- a day the store recorded nothing shouldn't drag
+    // the historical average down just because it sits inside the window.
+    const tradingDays = storeDays.size;
+    const histAvg = tradingDays > 0 ? totalGross / tradingDays : 0;
     if (observedDays >= MIN_DAYS_FOR_GROWTH && histAvg > 0) {
       growthPct = round((rateCents / histAvg - 1) * 100, 1);
     }
   }
+  if (idleDays > 0) warnings.push(`${idleDays} day(s) with no store-wide sales were treated as no data, not zero demand.`);
 
   const [lowCents, highCents] = rangeForTotal(rateCents, levelDays, storeVariance, horizon);
   const projectedGross = round((rateCents * horizon) / 100, 2);
@@ -234,19 +252,26 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
         if (cell) c += cell[1];
       }
 
-      let out = stockoutDays.get(p.sku) || new Set();
-      for (let d = rateStart; d <= windowEnd; d += 1) if (out.has(d)) stockouts += 1;
-      if (stockouts && windowEnd - rateStart + 1 - stockouts < MIN_USABLE_DAYS) {
-        out = new Set(); // nearly always sold out: too little left to learn from
-        stockouts = 0;
+      // A day is excluded from this product's rate either because it was personally out of stock,
+      // or because the whole store recorded no sales that day (see the store-revenue block above)
+      // -- neither kind of zero says anything about this product's demand.
+      const outOfStock = stockoutDays.get(p.sku) || new Set();
+      let excluded = new Set();
+      for (let d = rateStart; d <= windowEnd; d += 1) {
+        if (outOfStock.has(d) || !storeDays.has(d)) excluded.add(d);
       }
+      const spanDays = windowEnd - rateStart + 1;
+      if (excluded.size && spanDays - excluded.size < MIN_USABLE_DAYS) {
+        excluded = new Set(); // too little real trading history left to learn from
+      }
+      for (let d = rateStart; d <= windowEnd; d += 1) if (outOfStock.has(d) && excluded.has(d)) stockouts += 1;
       adjusted = stockouts > 0;
 
       const recent = [];
-      for (let d = rateStart; d <= windowEnd; d += 1) recent.push(out.has(d) ? null : (byDay.get(d) || [0, 0])[0]);
+      for (let d = rateStart; d <= windowEnd; d += 1) recent.push(excluded.has(d) ? null : (byDay.get(d) || [0, 0])[0]);
       const level = windowMean(recent, RATE_WINDOW_DAYS);
-      rate = level.mean;
-      dataDays = level.count;
+      rate = level ? level.mean : 0;
+      dataDays = level ? level.count : 0;
       const variance = sampleVariance(recent);
       [low7, high7] = rangeForTotal(rate, dataDays, variance, 7, true);
       sdLead = totalSd(rate, dataDays, variance, lead, true);
@@ -357,6 +382,7 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       timezone: payload.timezone ?? null,
       historyDays,
       observedDays,
+      idleDays,
       rateWindowDays: RATE_WINDOW_DAYS,
       revenueWindowDays: REVENUE_WINDOW_DAYS,
       rangeLevel: 0.8,

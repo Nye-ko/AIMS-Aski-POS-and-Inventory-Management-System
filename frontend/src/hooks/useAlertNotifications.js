@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../auth/apiFetch';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../config';
 const POLL_INTERVAL_MS = 60000;
 
 function buildNotifications(lowStockProducts, expiringProducts) {

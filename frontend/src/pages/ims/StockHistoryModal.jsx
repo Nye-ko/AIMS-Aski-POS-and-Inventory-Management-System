@@ -5,7 +5,7 @@ import { X, History, Loader2, Inbox, Download, Layers } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
 import ReceiptPreviewModal, { LedgerReference } from './ReceiptPreviewModal';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 const PAGE_SIZE = 50;
 const peso = (n) => `₱${Number(n).toFixed(2)}`;
 

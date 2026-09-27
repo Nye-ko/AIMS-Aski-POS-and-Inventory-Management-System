@@ -27,6 +27,7 @@ import {
 import NotificationPanel from './NotificationPanel';
 import { useAlertNotifications } from '../../hooks/useAlertNotifications';
 import { authHeader, getAuthToken } from '../../auth/apiFetch';
+import { API_BASE_URL, SERVER_URL } from '../../config';
 
 export default function Finance() {
   const [revenueComparisonData, setRevenueComparisonData] = useState([]);
@@ -62,11 +63,11 @@ export default function Finance() {
     setError(null);
     try {
       // FULL URL TO EXPRESS SERVER (Port 5000)
-      const response = await axios.get('http://localhost:5000/api/finance/summary', { headers: authHeader() });
+      const response = await axios.get(`${API_BASE_URL}/finance/summary`, { headers: authHeader() });
       handleDataResponse(response.data);
     } catch (err) {
       console.error('Failed to load financial data:', err);
-      setError('Failed to connect to backend server at http://localhost:5000');
+      setError(`Failed to connect to backend server at ${SERVER_URL}`);
     } finally {
       setLoading(false);
     }
@@ -75,7 +76,7 @@ export default function Finance() {
   useEffect(() => {
     fetchFinanceData();
 
-    const socket = io('http://localhost:5000', {
+    const socket = io(SERVER_URL, {
       transports: ['websocket', 'polling'],
       auth: { token: getAuthToken() },
     });

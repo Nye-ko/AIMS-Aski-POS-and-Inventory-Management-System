@@ -4,7 +4,7 @@ import { X, ClipboardCheck, Loader2, Download } from 'lucide-react';
 
 import { apiFetch } from '../../auth/apiFetch';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 
 async function downloadReceivingReportFile(receivingReport) {
   const res = await apiFetch(`${API_BASE_URL}/receiving-reports/${receivingReport.id}/export`);

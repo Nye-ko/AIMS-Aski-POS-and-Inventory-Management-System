@@ -64,7 +64,10 @@ class DemandRate(unittest.TestCase):
 
     def test_slow_seller_is_not_floored_to_one_per_day(self):
         # 7 units on one day in a 28-day window = 0.25/day. The old service reported 1/day.
-        r = run([product(stock=50)], daily("A", 1, 7, 10, start_offset=3) + daily("B", 27, 0, 1, start_offset=4))
+        # B's rows cover the full window (not just the days after A's sale) purely so the store
+        # records *something* every day -- otherwise the two open days before A's sale would be
+        # genuinely idle store-wide and get skipped, which isn't what this test is about.
+        r = run([product(stock=50)], daily("A", 1, 7, 10, start_offset=3) + daily("B", 28, 0, 1, start_offset=1))
         a = item(r, "A")
         self.assertEqual(a["dailyDemand"], 0.25)
         self.assertEqual(a["forecast7Day"], 1.8)
@@ -175,8 +178,11 @@ class StockOuts(unittest.TestCase):
         return [{"sku": sku, "date": (AS_OF - timedelta(days=k)).isoformat()} for k in offsets]
 
     def sales_with_gaps(self, gaps):
-        """4 units a day for 28 days, except no sales at all on the `gaps` (days back from asOf)."""
-        return [s for s in daily("A", 28, 4, 10.0) if s["date"] not in {(AS_OF - timedelta(days=k)).isoformat() for k in gaps}]
+        """4 units a day for 28 days, except no sales for A at all on the `gaps` (days back from asOf).
+        A filler product sells every day regardless, so the store itself is never idle on a gap day --
+        it's "A had no demand that day", not "the store recorded nothing at all that day"."""
+        skip = {(AS_OF - timedelta(days=k)).isoformat() for k in gaps}
+        return [s for s in daily("A", 28, 4, 10.0) if s["date"] not in skip] + daily("FILLER", 28, 1, 1.0)
 
     def test_days_out_of_stock_are_not_counted_as_zero_demand(self):
         gaps = [2, 3, 9, 10, 16, 17]

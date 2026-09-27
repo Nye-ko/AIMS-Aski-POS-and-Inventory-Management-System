@@ -359,24 +359,6 @@
   },
   {
    "sku": "STEADY-1",
-   "date": "2026-09-06",
-   "quantity": 2,
-   "revenue": 100.0
-  },
-  {
-   "sku": "SPARSE-1",
-   "date": "2026-09-06",
-   "quantity": 3,
-   "revenue": 360.75
-  },
-  {
-   "sku": "EXP-1",
-   "date": "2026-09-06",
-   "quantity": 1,
-   "revenue": 33.33
-  },
-  {
-   "sku": "STEADY-1",
    "date": "2026-09-07",
    "quantity": 3,
    "revenue": 150.0
@@ -802,12 +784,6 @@
    "gross": 233.33,
    "discount": 0.0,
    "net": 233.33
-  },
-  {
-   "date": "2026-09-06",
-   "gross": 494.08,
-   "discount": 0.0,
-   "net": 494.08
   },
   {
    "date": "2026-09-07",

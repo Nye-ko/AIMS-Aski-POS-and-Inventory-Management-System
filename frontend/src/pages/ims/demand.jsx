@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { authHeader } from '../../auth/apiFetch';
 import { useAuth } from '../../auth/AuthContext';
+import { API_BASE_URL } from '../../config';
 import {
   TrendingUp,
   AlertTriangle,
@@ -36,7 +37,7 @@ function SupplierLeadTimes({ onSaved }) {
   useEffect(() => {
     let cancelled = false;
     axios
-      .get('http://localhost:5000/api/suppliers', { headers: authHeader() })
+      .get(`${API_BASE_URL}/suppliers`, { headers: authHeader() })
       .then((res) => {
         if (!cancelled) setSuppliers(res.data);
       })
@@ -56,7 +57,7 @@ function SupplierLeadTimes({ onSaved }) {
     setMessage(null);
     try {
       const res = await axios.patch(
-        `http://localhost:5000/api/suppliers/${supplier.id}`,
+        `${API_BASE_URL}/suppliers/${supplier.id}`,
         { leadTimeDays: days },
         { headers: authHeader() }
       );
@@ -89,12 +90,14 @@ function SupplierLeadTimes({ onSaved }) {
           </p>
         </div>
       </div>
-      <div className="grid grid-cols-1 relative z-10 gap-2 sm:gap-3 p-3 sm:p-5 md:grid-cols-3">
+      {/* Fixed to 3 columns x 5 rows visible; more suppliers scroll vertically only. */}
+      <div className="relative z-10 max-h-[328px] overflow-y-auto overflow-x-hidden p-3 sm:p-5">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {suppliers.map((sup) => {
           const value = drafts[sup.id] ?? sup.leadTimeDays;
           const dirty = drafts[sup.id] !== undefined && Number(drafts[sup.id]) !== sup.leadTimeDays;
           return (
-            <div key={sup.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700/60 bg-white/5 px-4 py-3">
+            <div key={sup.id} className="flex h-14 items-center justify-between gap-3 rounded-2xl border border-slate-700/60 bg-white/5 px-4 py-3">
               <span className="truncate text-xs font-bold text-slate-200">{sup.name}</span>
               <span className="flex items-center gap-2">
                 <input
@@ -120,6 +123,7 @@ function SupplierLeadTimes({ onSaved }) {
             </div>
           );
         })}
+        </div>
       </div>
       {message && <p className="px-5 pb-4 text-xs relative z-10 text-rose-400">{message}</p>}
     </div>
@@ -138,7 +142,7 @@ export default function Demand() {
     try {
       const days = demandMode === 'future' ? 60 : 30;
       // Fetching predictions from Express backend endpoint
-      const res = await axios.get(`http://localhost:5000/api/forecast?days=${days}${refresh === true ? '&refresh=1' : ''}`, {
+      const res = await axios.get(`${API_BASE_URL}/forecast?days=${days}${refresh === true ? '&refresh=1' : ''}`, {
         headers: authHeader(),
       });
 

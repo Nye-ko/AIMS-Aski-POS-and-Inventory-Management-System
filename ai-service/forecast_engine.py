@@ -7,8 +7,11 @@ same golden fixture (ai-service/tests/fixtures), so change them together.
 
 Engine "rate-mean" (2.x): demand rate = units sold per calendar day over the last 28 days a product
 existed, counting days with no sales as zero but skipping days the product was out of stock (those
-zeros are lost sales, not lack of demand). Store revenue uses the last 14 days, which follows a moving
-level sooner than 28 does (measured with backtest.py, see CLAUDE.md). Every forecast carries an 80% range.
+zeros are lost sales, not lack of demand) -- and skipping days the whole store recorded no sales at
+all (e.g. a gap between an imported history and this system going live), the same way, unless too
+little real trading history would be left in the window. Store revenue uses the last 14 days, which
+follows a moving level sooner than 28 does (measured with backtest.py, see CLAUDE.md). Every forecast
+carries an 80% range.
 Version 1.0.0's forecasts (28 days for revenue, stock-outs ignored) stay reproducible behind `legacy=True`
 so the backtest can keep proving that the current version is better than the one it replaced.
 
@@ -147,18 +150,37 @@ def build_forecast(payload, source="ai-service", legacy=False):
     store_variance = None
     discount_ratio = 0.0
     growth_pct = None
+    idle_days = 0  # days with no sales anywhere in the store, actually skipped (reported in meta)
     if store_start is not None:
         first = max(store_start, window_end - RATE_WINDOW_DAYS + 1)
-        recent = [store_days.get(d, [0, 0])[0] for d in range(first, window_end + 1)]
-        rate_cents, level_days = window_mean(recent, revenue_window)
+        span_days = window_end - first + 1
+        # Idle-day skipping is new in 2.x; legacy=True must keep reproducing the frozen 1.0.0 numbers.
+        idle_in_span = 0 if legacy else sum(1 for d in range(first, window_end + 1) if d not in store_days)
+        # A day with no sales anywhere in the store (not just one product out of stock) says nothing
+        # about demand -- the store simply wasn't recording sales that day (e.g. a gap between an
+        # imported history and this system going live). Skip it like a stock-out, unless doing so
+        # would leave too little real trading history in the window to learn from.
+        skip_idle = idle_in_span > 0 and span_days - idle_in_span >= MIN_USABLE_DAYS
+        if skip_idle:
+            idle_days = idle_in_span
+        recent = [None if (skip_idle and d not in store_days) else store_days.get(d, [0, 0])[0]
+                  for d in range(first, window_end + 1)]
+        level = window_mean(recent, revenue_window)
+        rate_cents, level_days = level if level else (0.0, 1)
         store_variance = sample_variance(recent)
 
         total_gross = sum(v[0] for v in store_days.values())
         total_discount = sum(v[1] for v in store_days.values())
         discount_ratio = total_discount / total_gross if total_gross > 0 else 0.0
-        hist_avg = total_gross / observed_days
+        # Trading days only, not the calendar span -- a day the store recorded nothing shouldn't drag
+        # the historical average down just because it sits inside the window. (Legacy keeps the old
+        # calendar-span denominator, for the same reproducibility reason as above.)
+        trading_days = observed_days if legacy else len(store_days)
+        hist_avg = total_gross / trading_days if trading_days > 0 else 0.0
         if observed_days >= MIN_DAYS_FOR_GROWTH and hist_avg > 0:
             growth_pct = _round((rate_cents / hist_avg - 1) * 100, 1)
+    if idle_days > 0:
+        warnings.append(f"{idle_days} day(s) with no store-wide sales were treated as no data, not zero demand.")
 
     low_cents, high_cents = range_for_total(rate_cents, level_days, store_variance, horizon)
     projected_gross = _round(rate_cents * horizon / 100, 2)
@@ -221,15 +243,21 @@ def build_forecast(payload, source="ai-service", legacy=False):
                 if cell:
                     cents += cell[1]
 
-            out = stockout_days.get(p["sku"], set())
-            stockouts = sum(1 for d in range(rate_start, window_end + 1) if d in out)
-            if stockouts and (window_end - rate_start + 1) - stockouts < MIN_USABLE_DAYS:
-                out = set()                 # nearly always sold out: too little left to learn from
-                stockouts = 0
+            # A day is excluded either because this product was personally out of stock, or because
+            # the whole store recorded no sales that day (see the store-revenue block above) -- neither
+            # kind of zero says anything about this product's demand.
+            out_of_stock = stockout_days.get(p["sku"], set())
+            excluded = {d for d in range(rate_start, window_end + 1)
+                        if d in out_of_stock or (not legacy and d not in store_days)}
+            span_days = window_end - rate_start + 1
+            if excluded and span_days - len(excluded) < MIN_USABLE_DAYS:
+                excluded = set()            # too little real trading history left to learn from
+            stockouts = sum(1 for d in range(rate_start, window_end + 1) if d in out_of_stock and d in excluded)
             adjusted = stockouts > 0
 
-            recent = [None if d in out else by_day.get(d, [0, 0])[0] for d in range(rate_start, window_end + 1)]
-            rate, data_days = window_mean(recent, RATE_WINDOW_DAYS)
+            recent = [None if d in excluded else by_day.get(d, [0, 0])[0] for d in range(rate_start, window_end + 1)]
+            level = window_mean(recent, RATE_WINDOW_DAYS)
+            rate, data_days = level if level else (0.0, 0)
             variance = sample_variance(recent)
             low7, high7 = range_for_total(rate, data_days, variance, 7, count_data=True)
             sd_lead = total_sd(rate, data_days, variance, lead, count_data=True)
@@ -322,6 +350,7 @@ def build_forecast(payload, source="ai-service", legacy=False):
             "timezone": payload.get("timezone"),
             "historyDays": history_days,
             "observedDays": observed_days,
+            "idleDays": idle_days,
             "rateWindowDays": RATE_WINDOW_DAYS,
             "revenueWindowDays": revenue_window,
             "rangeLevel": 0.8,

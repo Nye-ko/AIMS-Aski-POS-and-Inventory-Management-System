@@ -7,7 +7,7 @@ import { X, ClipboardCheck, Loader2, Inbox, ChevronLeft, Plus, Trash2 } from 'lu
 import { apiFetch } from '../../auth/apiFetch';
 import ProductCombobox from './ProductCombobox';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 
 async function downloadReceivingReportFile(receivingReport) {
   const res = await apiFetch(`${API_BASE_URL}/receiving-reports/${receivingReport.id}/export`);

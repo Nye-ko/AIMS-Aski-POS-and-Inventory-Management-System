@@ -3,7 +3,7 @@ import { History, Loader2, Inbox } from 'lucide-react';
 import { apiFetch } from '../../auth/apiFetch';
 import Dropdown from '../../components/Dropdown';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../../config';
 const PAGE_SIZE = 50;
 
 const ACTION_LABELS = {

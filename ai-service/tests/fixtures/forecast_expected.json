@@ -1,12 +1,12 @@
 {
  "kpis": {
   "projectedGross": 7260.26,
-  "projectedGrossLow": 5380.84,
-  "projectedGrossHigh": 9139.67,
-  "projectedNet": 7136.58,
-  "projectedDiscounts": 123.68,
-  "discountRatePct": 1.7,
-  "grossGrowth": "-0.5%",
+  "projectedGrossLow": 5443.54,
+  "projectedGrossHigh": 9076.97,
+  "projectedNet": 7130.73,
+  "projectedDiscounts": 129.53,
+  "discountRatePct": 1.78,
+  "grossGrowth": "+1.9%",
   "highRiskSKUs": 3,
   "horizonDays": 30
  },
@@ -134,7 +134,7 @@
   {
    "day": "Sep 06",
    "date": "2026-09-06",
-   "actual": 494.08,
+   "actual": 0.0,
    "forecast": null,
    "forecastLow": null,
    "forecastHigh": null
@@ -256,257 +256,257 @@
    "date": "2026-09-21",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 22",
    "date": "2026-09-22",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 23",
    "date": "2026-09-23",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 24",
    "date": "2026-09-24",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 25",
    "date": "2026-09-25",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 26",
    "date": "2026-09-26",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 27",
    "date": "2026-09-27",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 28",
    "date": "2026-09-28",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 29",
    "date": "2026-09-29",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Sep 30",
    "date": "2026-09-30",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 01",
    "date": "2026-10-01",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 02",
    "date": "2026-10-02",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 03",
    "date": "2026-10-03",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 04",
    "date": "2026-10-04",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 05",
    "date": "2026-10-05",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 06",
    "date": "2026-10-06",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 07",
    "date": "2026-10-07",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 08",
    "date": "2026-10-08",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 09",
    "date": "2026-10-09",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 10",
    "date": "2026-10-10",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 11",
    "date": "2026-10-11",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 12",
    "date": "2026-10-12",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 13",
    "date": "2026-10-13",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 14",
    "date": "2026-10-14",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 15",
    "date": "2026-10-15",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 16",
    "date": "2026-10-16",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 17",
    "date": "2026-10-17",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 18",
    "date": "2026-10-18",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 19",
    "date": "2026-10-19",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   },
   {
    "day": "Oct 20",
    "date": "2026-10-20",
    "actual": null,
    "forecast": 242.01,
-   "forecastLow": 41.66,
-   "forecastHigh": 442.35
+   "forecastLow": 48.35,
+   "forecastHigh": 435.67
   }
  ],
  "categoryBreakdown": [
   {
    "category": "Dairy",
-   "projectedRevenue": 5338.59,
-   "percentShare": 73.5
+   "projectedRevenue": 5595.09,
+   "percentShare": 77.1
   },
   {
    "category": "Hardware",
-   "projectedRevenue": 1869.84,
-   "percentShare": 25.8
+   "projectedRevenue": 1609.41,
+   "percentShare": 22.2
   },
   {
    "category": "Pantry",
-   "projectedRevenue": 51.83,
-   "percentShare": 0.7
+   "projectedRevenue": 55.77,
+   "percentShare": 0.8
   },
   {
    "category": "Uncategorized",
@@ -522,21 +522,21 @@
    "category": "Dairy",
    "stock": 40,
    "minStock": 10,
-   "dailyDemand": 3.0,
-   "forecast7Day": 21.0,
-   "forecast7Low": 14.3,
-   "forecast7High": 27.7,
-   "forecastHorizon": 90.0,
+   "dailyDemand": 3.04,
+   "forecast7Day": 21.3,
+   "forecast7Low": 14.5,
+   "forecast7High": 28.1,
+   "forecastHorizon": 91.3,
    "leadTimeDays": 14,
    "onOrder": 0,
-   "safetyStock": 13.4,
-   "reorderPoint": 56,
-   "orderUpTo": 81,
-   "reorderQty": 41,
-   "daysOfCover": 13.3,
+   "safetyStock": 13.6,
+   "reorderPoint": 57,
+   "orderUpTo": 83,
+   "reorderQty": 43,
+   "daysOfCover": 13.1,
    "status": "REORDER NOW",
    "confidence": "medium",
-   "dataDays": 24,
+   "dataDays": 23,
    "stockoutDays": 4,
    "stockoutAdjusted": true
   },
@@ -548,7 +548,7 @@
    "stock": 60,
    "minStock": 10,
    "dailyDemand": 0.96,
-   "forecast7Day": 6.8,
+   "forecast7Day": 6.7,
    "forecast7Low": 3.0,
    "forecast7High": 10.5,
    "forecastHorizon": 28.9,
@@ -558,10 +558,10 @@
    "reorderPoint": 10,
    "orderUpTo": 16,
    "reorderQty": 0,
-   "daysOfCover": 62.2,
+   "daysOfCover": 62.3,
    "status": "EXPIRY RISK",
-   "confidence": "high",
-   "dataDays": 28,
+   "confidence": "medium",
+   "dataDays": 27,
    "stockoutDays": 0,
    "stockoutAdjusted": false
   },
@@ -585,8 +585,8 @@
    "reorderQty": 5,
    "daysOfCover": null,
    "status": "EXPIRY RISK",
-   "confidence": "high",
-   "dataDays": 28,
+   "confidence": "medium",
+   "dataDays": 27,
    "stockoutDays": 0,
    "stockoutAdjusted": false
   },
@@ -610,8 +610,8 @@
    "reorderQty": 0,
    "daysOfCover": null,
    "status": "HEALTHY",
-   "confidence": "high",
-   "dataDays": 28,
+   "confidence": "medium",
+   "dataDays": 27,
    "stockoutDays": 0,
    "stockoutAdjusted": false
   },
@@ -647,18 +647,18 @@
    "category": "Hardware",
    "stock": 30,
    "minStock": 5,
-   "dailyDemand": 0.54,
-   "forecast7Day": 3.8,
+   "dailyDemand": 0.43,
+   "forecast7Day": 3.0,
    "forecast7Low": 0.0,
-   "forecast7High": 8.2,
-   "forecastHorizon": 16.1,
+   "forecast7High": 7.1,
+   "forecastHorizon": 12.9,
    "leadTimeDays": 7,
    "onOrder": 0,
-   "safetyStock": 5.7,
-   "reorderPoint": 10,
-   "orderUpTo": 17,
+   "safetyStock": 5.2,
+   "reorderPoint": 9,
+   "orderUpTo": 15,
    "reorderQty": 0,
-   "daysOfCover": 56.0,
+   "daysOfCover": 70.0,
    "status": "HEALTHY",
    "confidence": "high",
    "dataDays": 28,
@@ -674,6 +674,7 @@
   "timezone": "Asia/Manila",
   "historyDays": 180,
   "observedDays": 45,
+  "idleDays": 1,
   "rateWindowDays": 28,
   "revenueWindowDays": 14,
   "rangeLevel": 0.8,
@@ -682,7 +683,8 @@
   "skuCount": 6,
   "lowData": false,
   "warnings": [
-   "1 sales rows ignored (unknown product)."
+   "1 sales rows ignored (unknown product).",
+   "1 day(s) with no store-wide sales were treated as no data, not zero demand."
   ]
  }
 }
