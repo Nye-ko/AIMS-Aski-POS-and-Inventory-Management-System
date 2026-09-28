@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Navigate } from 'react-router-dom';
 import {
   Users,
@@ -15,6 +16,8 @@ import {
   Check,
   X,
   Hash,
+  Trash2,
+  MoreVertical,
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import AuditLogPanel from './AuditLogPanel';
@@ -63,6 +66,91 @@ function passwordStrength(password) {
     { label: 'Strong', color: 'bg-emerald-500' },
   ];
   return { score, ...levels[score] };
+}
+
+// A compact "⋮" menu for a table row's actions, rendered in a portal with fixed positioning so it's
+// never clipped by the table card's rounded-corner overflow-hidden — same technique as Dropdown.jsx.
+// `actions`: [{ key, label, icon, onClick, disabled?, danger? }].
+function RowActionsMenu({ actions, busy }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+  const panelRef = useRef(null);
+
+  const openMenu = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const width = 200;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < 220 && rect.top > spaceBelow;
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    setPos(
+      openUp
+        ? { left, width, bottom: window.innerHeight - rect.top + 6 }
+        : { left, width, top: rect.bottom + 6 }
+    );
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleDown = (e) => {
+      if (triggerRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const handleScroll = (e) => {
+      if (panelRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const handleResize = () => setOpen(false);
+    document.addEventListener('mousedown', handleDown);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('mousedown', handleDown);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        title="Actions"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        disabled={busy}
+        className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition cursor-pointer disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MoreVertical className="w-3.5 h-3.5" />}
+      </button>
+
+      {open && pos && createPortal(
+        <div
+          ref={panelRef}
+          className="fixed z-[100] bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 py-1.5"
+          style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom }}
+        >
+          {actions.map((a) => (
+            <button
+              key={a.key}
+              type="button"
+              disabled={a.disabled}
+              onClick={() => { setOpen(false); a.onClick(); }}
+              className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-left transition-colors ${
+                a.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-slate-50'
+              } ${a.danger ? 'text-rose-600' : 'text-slate-700'}`}
+            >
+              {a.icon && <a.icon className="w-3.5 h-3.5 shrink-0" />}
+              <span className="flex-1 truncate">{a.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
 }
 
 export default function UserManagement() {
@@ -249,6 +337,29 @@ export default function UserManagement() {
       bumpActivity();
     } catch (err) {
       setRowError(err.message || 'Failed to update status.');
+    } finally {
+      setRowBusyId(null);
+    }
+  };
+
+  // Soft delete: the account is deactivated on the server, not removed from the database — this
+  // just takes it off the list below. See backend/models/User.js softDelete.
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Delete ${u.username}? They'll be deactivated and removed from this list.`)) return;
+    setRowBusyId(u.id);
+    setRowError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${u.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      if (handleAuthFailure(res.status)) return;
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Failed to delete user.');
+      setUsers((prev) => prev.filter((row) => row.id !== u.id));
+      bumpActivity();
+    } catch (err) {
+      setRowError(err.message || 'Failed to delete user.');
     } finally {
       setRowBusyId(null);
     }
@@ -516,22 +627,21 @@ export default function UserManagement() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-[11px] sm:text-xs">
+          <div>
+            <table className="w-full text-left text-[11px] sm:text-xs">
               <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b-2 border-slate-200">
                 <tr>
                   <th className="px-3 py-2 sm:px-4 sm:py-3">Name</th>
                   <th className="px-3 py-2 sm:px-4 sm:py-3">Username</th>
                   <th className="px-3 py-2 sm:px-4 sm:py-3">Role</th>
                   <th className="px-3 py-2 sm:px-4 sm:py-3">Status</th>
-                  <th className="px-3 py-2 sm:px-4 sm:py-3">Created Date</th>
                   <th className="px-3 py-2 sm:px-4 sm:py-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td colSpan="6" className="px-4 py-10 text-center text-slate-400">
+                    <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" /> Loading users...
                       </div>
@@ -539,11 +649,11 @@ export default function UserManagement() {
                   </tr>
                 ) : listError ? (
                   <tr>
-                    <td colSpan="6" className="px-4 py-8 text-center text-rose-600 font-semibold">{listError}</td>
+                    <td colSpan="5" className="px-4 py-8 text-center text-rose-600 font-semibold">{listError}</td>
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-4 py-10 text-center text-slate-400">
+                    <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <Inbox className="w-6 h-6" />
                         <span>No user accounts yet.</span>
@@ -556,7 +666,10 @@ export default function UserManagement() {
                     const isBusy = rowBusyId === u.id;
                     return (
                       <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-3 py-2 sm:px-4 sm:py-3 font-bold text-slate-800">{u.fullName || '—'}</td>
+                        <td className="px-3 py-2 sm:px-4 sm:py-3">
+                          <div className="font-bold text-slate-800">{u.fullName || '—'}</div>
+                          <div className="text-[10px] font-medium text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</div>
+                        </td>
                         <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-600 font-medium">{u.username}</td>
                         <td className="px-3 py-2 sm:px-4 sm:py-3">
                           {editingRoleId === u.id ? (
@@ -606,48 +719,25 @@ export default function UserManagement() {
                             {u.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-3 py-2 sm:px-4 sm:py-3 text-slate-500 font-medium">
-                          {new Date(u.createdAt).toLocaleDateString()}
-                        </td>
                         <td className="px-3 py-2 sm:px-4 sm:py-3">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              title="Reset Password"
-                              onClick={() => resetPassword(u)}
-                              disabled={isBusy}
-                              className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition cursor-pointer disabled:opacity-50"
-                            >
-                              <KeyRound className="w-3.5 h-3.5" />
-                            </button>
-                            {(u.role === 'SUPERVISOR' || u.role === 'ADMIN') && (
-                              <button
-                                title={u.hasPin ? 'Change approval PIN' : 'Set approval PIN'}
-                                onClick={() => openPinDialog(u)}
-                                disabled={isBusy}
-                                className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition cursor-pointer disabled:opacity-50"
-                              >
-                                <Hash className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              title="Edit Role"
-                              onClick={() => startEditRole(u)}
-                              disabled={isBusy || editingRoleId === u.id}
-                              className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition cursor-pointer disabled:opacity-50"
-                            >
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              title={isSelf ? "You can't deactivate your own account" : u.isActive ? 'Deactivate' : 'Activate'}
-                              onClick={() => toggleStatus(u)}
-                              disabled={isBusy || isSelf}
-                              className={`p-1.5 rounded-lg transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                                u.isActive ? 'text-slate-500 hover:text-rose-700 hover:bg-rose-50' : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50'
-                              }`}
-                            >
-                              {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
+                          <RowActionsMenu
+                            busy={isBusy}
+                            actions={[
+                              { key: 'reset', label: 'Reset Password', icon: KeyRound, onClick: () => resetPassword(u) },
+                              ...(u.role === 'SUPERVISOR' || u.role === 'ADMIN'
+                                ? [{ key: 'pin', label: u.hasPin ? 'Change Approval PIN' : 'Set Approval PIN', icon: Hash, onClick: () => openPinDialog(u) }]
+                                : []),
+                              { key: 'role', label: 'Edit Role', icon: ShieldCheck, onClick: () => startEditRole(u), disabled: editingRoleId === u.id },
+                              {
+                                key: 'status',
+                                label: u.isActive ? 'Deactivate' : 'Activate',
+                                icon: Power,
+                                onClick: () => toggleStatus(u),
+                                disabled: isSelf,
+                              },
+                              { key: 'delete', label: 'Delete', icon: Trash2, onClick: () => deleteUser(u), disabled: isSelf, danger: true },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );

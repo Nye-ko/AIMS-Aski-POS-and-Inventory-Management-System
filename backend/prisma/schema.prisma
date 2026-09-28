@@ -56,6 +56,10 @@ model User {
   role      Role     @default(CASHIER)
   isActive  Boolean  @default(true)
   pin       String?
+  // Soft delete: set (with isActive forced false) by the admin "Delete" action in User Management.
+  // The row and its history are kept for referential integrity and audit trail; findAll() only hides
+  // it from the list. null means not deleted.
+  deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -525,7 +529,7 @@ model PurchaseReturnItem {
 // Admin actions on user accounts. Username snapshots survive even if a user row is later removed.
 model AuditLog {
   id             Int      @id @default(autoincrement())
-  action         String // USER_CREATED | USER_ROLE_CHANGED | USER_ACTIVATED | USER_DEACTIVATED | USER_PIN_SET | USER_PIN_CLEARED | USER_PASSWORD_RESET
+  action         String // USER_CREATED | USER_ROLE_CHANGED | USER_ACTIVATED | USER_DEACTIVATED | USER_DELETED | USER_PIN_SET | USER_PIN_CLEARED | USER_PASSWORD_RESET
   actorId        Int?
   actor          User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
   actorUsername  String

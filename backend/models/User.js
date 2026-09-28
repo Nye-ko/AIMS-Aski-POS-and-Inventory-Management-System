@@ -30,6 +30,9 @@ const publicSelect = {
   updatedAt: true,
 };
 
+// Soft-deleted users still exist for referential integrity and audit trail, but never appear in the list.
+const NOT_DELETED = { deletedAt: null };
+
 // Never expose the stored PIN hash — only whether one is set.
 const toPublic = (user) => {
   if (!user) return user;
@@ -70,6 +73,7 @@ const loadUser = async (id) => {
 const UserModel = {
   findAll: async () => {
     const users = await prisma.user.findMany({
+      where: NOT_DELETED,
       select: publicSelect,
       orderBy: { createdAt: 'desc' },
     });
@@ -148,6 +152,26 @@ const UserModel = {
           target: updated,
         });
       }
+      return toPublic(updated);
+    });
+  },
+
+  // Soft delete: does not remove the row (kept for referential integrity and the audit trail) --
+  // deactivates the account and hides it from findAll(). Same guardrails as setActive(false): an
+  // admin cannot delete their own account or the last active admin.
+  softDelete: async (id, actor) => {
+    const user = await loadUser(id);
+    if (user.deletedAt) throw new UserError('User not found.');
+    if (user.id === actor.id) throw new UserError('You cannot delete your own account.');
+    await assertNotLastActiveAdmin(user);
+
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: user.id },
+        data: { isActive: false, deletedAt: new Date() },
+        select: publicSelect,
+      });
+      await AuditLogModel.record(tx, { action: 'USER_DELETED', actor, target: updated });
       return toPublic(updated);
     });
   },

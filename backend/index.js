@@ -212,6 +212,17 @@ app.patch('/api/users/:id/status', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// Soft delete: does not remove the row, just deactivates it and hides it from the user list.
+app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await UserModel.softDelete(req.params.id, req.user);
+    res.json(user);
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(400).json({ error: error.message || 'Failed to delete user' });
+  }
+});
+
 // Set (body: { pin: "1234" }) or clear (body: { pin: null }) a supervisor's POS approval PIN.
 app.put('/api/users/:id/pin', authenticateToken, requireAdmin, async (req, res) => {
   try {
