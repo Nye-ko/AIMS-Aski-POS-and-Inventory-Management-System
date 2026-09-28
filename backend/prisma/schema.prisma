@@ -118,6 +118,7 @@ model Product {
   stockBatches         StockBatch[]
 
   @@index([barcode, name])
+  @@index([category])
 }
 
 // One row per delivery/arrival of stock, so cost can be tracked per batch instead of Product

@@ -12,8 +12,13 @@
 // or below it. A day with no sales anywhere in the store (not one product's stock-out, but the whole
 // store recording nothing -- e.g. a gap between an imported history and this system going live) is
 // skipped the same way, so it never gets counted as "zero demand" -- unless too little real trading
-// history would be left in the window, in which case it falls back to counting it as zero, same as
-// before. See the header of ai-service/forecast_engine.py for the reasoning.
+// history would be left in the window, in which case (2.2.0) the engine reaches further back, up to
+// the full history lookback, for the most recent real trading days instead of giving up and counting
+// the gap as zero; a warning notes when this happened. The revenue trajectory chart (2.3.0) is reshaped
+// by day-of-week -- learned from real (non-simulated) trading days across the full history, each weekday
+// trusted only with MIN_WEEKDAY_OBS real observations, otherwise left flat -- but this never changes the
+// KPI totals (projectedGross etc.) or per-SKU demand, which still use the plain flat rate: only the
+// chart's daily split changes. See the header of ai-service/forecast_engine.py for the reasoning.
 //
 // Money is summed in integer cents so results do not depend on row order. Dates are ISO "YYYY-MM-DD"
 // strings in the store's local time zone.
@@ -21,11 +26,13 @@
 const { SERVICE_Z, windowMean, sampleVariance, totalSd, rangeForTotal } = require('./forecastStats');
 
 const ENGINE_NAME = 'rate-mean';
-const ENGINE_VERSION = '2.1.0';
+const ENGINE_VERSION = '2.3.0';
 
 const RATE_WINDOW_DAYS = 28; // a product's demand rate
 const REVENUE_WINDOW_DAYS = 14; // the store's revenue rate
 const TRAJECTORY_HISTORY_DAYS = 30;
+const MIN_WEEKDAY_OBS = 4; // real (non-simulated) trading days needed before trusting a weekday's shape
+const WEEKDAYS = 7;
 const EXPIRY_HORIZON_DAYS = 180;
 const MIN_DAYS_FOR_GROWTH = 14;
 const MIN_USABLE_DAYS = 7; // fewer in-stock days than this in the window: stock-outs are not excluded
@@ -59,6 +66,7 @@ const label = (n) => {
   const d = new Date(n * MS_PER_DAY);
   return `${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`;
 };
+const weekdayOf = (n) => new Date(n * MS_PER_DAY).getUTCDay(); // 0=Sun..6=Sat
 
 const confidence = (dataDays) => {
   if (dataDays <= 0) return 'none';
@@ -111,6 +119,9 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
 
   // --- store-level daily gross / discount (cents) ---------------------------------------------
   const storeDays = new Map(); // day -> [gross, discount]
+  // Days made entirely of synthetic (SIM-*) transactions -- a data-gap fill with no real day-of-week
+  // signal (see salesHistory.js). Still counted toward the store's level/rate, just not its weekday shape.
+  const simulatedDays = new Set();
   const totals = payload.dailyTotals || [];
   if (totals.length) {
     for (const t of totals) {
@@ -120,6 +131,7 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
         const cell = storeDays.get(d);
         cell[0] += cents(t.gross);
         cell[1] += cents(t.discount);
+        if (t.simulated) simulatedDays.add(d);
       }
     }
   } else {
@@ -151,6 +163,7 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
   let discountRatio = 0;
   let growthPct = null;
   let idleDays = 0; // days with no sales anywhere in the store, actually skipped (reported in meta)
+  let staleSinceDays = null; // set when the rate had to be learned from trading days older than the usual window
   if (storeStart !== null) {
     const first = Math.max(storeStart, windowEnd - RATE_WINDOW_DAYS + 1);
     const spanDays = windowEnd - first + 1;
@@ -162,8 +175,30 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
     // would leave too little real trading history in the window to learn from.
     const skipIdle = idleInSpan > 0 && spanDays - idleInSpan >= MIN_USABLE_DAYS;
     if (skipIdle) idleDays = idleInSpan;
-    const recent = [];
-    for (let d = first; d <= windowEnd; d += 1) recent.push(skipIdle && !storeDays.has(d) ? null : storeGross(d));
+    let recent;
+    if (idleInSpan === 0 || skipIdle) {
+      recent = [];
+      for (let d = first; d <= windowEnd; d += 1) recent.push(skipIdle && !storeDays.has(d) ? null : storeGross(d));
+    } else {
+      // The normal window doesn't have enough real trading days to learn from even after skipping
+      // idle ones -- the gap itself has outgrown the window (e.g. a month or more between an
+      // imported history and this system going live). Reach further back, up to the full history
+      // lookback, for the most recent real trading days instead of averaging in a long run of zeros.
+      recent = [];
+      let oldest = null;
+      for (let d = windowEnd; d >= windowStart && recent.length < REVENUE_WINDOW_DAYS; d -= 1) {
+        if (storeDays.has(d)) { recent.unshift(storeGross(d)); oldest = d; }
+      }
+      if (recent.length < MIN_USABLE_DAYS) {
+        // Even the full history doesn't have enough real trading days -- there is truly nothing
+        // reliable to learn from, so fall back to the plain calendar-window average (the gap
+        // counts as zero) same as before, rather than trusting a handful of very old points.
+        recent = [];
+        for (let d = first; d <= windowEnd; d += 1) recent.push(storeGross(d));
+      } else if (oldest !== null && oldest < first) {
+        staleSinceDays = windowEnd - oldest;
+      }
+    }
     const level = windowMean(recent, REVENUE_WINDOW_DAYS);
     rateCents = level ? level.mean : 0;
     levelDays = level ? level.count : 1;
@@ -181,6 +216,39 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
     }
   }
   if (idleDays > 0) warnings.push(`${idleDays} day(s) with no store-wide sales were treated as no data, not zero demand.`);
+  if (staleSinceDays !== null) {
+    warnings.push(`No recent store-wide sales in the last ${RATE_WINDOW_DAYS} days; revenue is estimated from the most recent real trading day(s), up to ${staleSinceDays} day(s) ago.`);
+  }
+
+  // --- weekday shape for the trajectory (2.3.0): the flat rate above is never changed, only how it's
+  // split across the chart's daily points -- learned from real (non-simulated) trading days across the
+  // full history window, each weekday trusted only once it has MIN_WEEKDAY_OBS real observations.
+  const weekdaySum = new Array(WEEKDAYS).fill(0);
+  const weekdayCount = new Array(WEEKDAYS).fill(0);
+  let realTotalCents = 0;
+  let realDayCount = 0;
+  for (const [d, [gross]] of storeDays) {
+    if (simulatedDays.has(d)) continue;
+    const wd = weekdayOf(d);
+    weekdaySum[wd] += gross;
+    weekdayCount[wd] += 1;
+    realTotalCents += gross;
+    realDayCount += 1;
+  }
+  const overallMean = realDayCount > 0 ? realTotalCents / realDayCount : 0;
+  const weekdayFactor = new Array(WEEKDAYS).fill(1);
+  let shapedWeekdays = 0;
+  if (overallMean > 0) {
+    for (let wd = 0; wd < WEEKDAYS; wd += 1) {
+      if (weekdayCount[wd] >= MIN_WEEKDAY_OBS) {
+        weekdayFactor[wd] = weekdaySum[wd] / weekdayCount[wd] / overallMean;
+        shapedWeekdays += 1;
+      }
+    }
+  }
+  if (shapedWeekdays === 0) {
+    warnings.push('Not enough real trading history yet to shape the forecast by day of week; showing a flat daily average.');
+  }
 
   const [lowCents, highCents] = rangeForTotal(rateCents, levelDays, storeVariance, horizon);
   const projectedGross = round((rateCents * horizon) / 100, 2);
@@ -209,15 +277,24 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
     joint.forecastLow = joint.actual;
     joint.forecastHigh = joint.actual;
     const [dayLow, dayHigh] = rangeForTotal(rateCents, levelDays, storeVariance, 1);
+    const lowMargin = rateCents - dayLow; // kept constant per day, just recentered on the shaped value
+    const highMargin = dayHigh - rateCents;
+    // Reshape the flat rate by weekday, then rescale the horizon's days so their sum still equals
+    // rateCents * horizon exactly -- the KPI totals above never change, only the daily split.
+    const rawShaped = [];
+    for (let i = 0; i < horizon; i += 1) rawShaped.push(rateCents * weekdayFactor[weekdayOf(asOf + i)]);
+    const rawSum = sum(rawShaped);
+    const shapeScale = rawSum > 0 ? (rateCents * horizon) / rawSum : 1;
     for (let i = 0; i < horizon; i += 1) {
       const d = asOf + i;
+      const shaped = rawShaped[i] * shapeScale;
       trajectory.push({
         day: label(d),
         date: toIso(d),
         actual: null,
-        forecast: round(rateCents / 100, 2),
-        forecastLow: round(dayLow / 100, 2),
-        forecastHigh: round(dayHigh / 100, 2),
+        forecast: round(shaped / 100, 2),
+        forecastLow: round(Math.max(0, shaped - lowMargin) / 100, 2),
+        forecastHigh: round((shaped + highMargin) / 100, 2),
       });
     }
   }
@@ -225,6 +302,7 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
   // --- per-SKU demand and status --------------------------------------------------------------
   const items = [];
   const categoryCents = new Map();
+  let staleSkuCount = 0; // products whose demand rate had to reach past the usual window (see below)
   for (const p of products) {
     const byDay = skuDays.get(p.sku) || new Map();
     const candidates = [];
@@ -261,14 +339,34 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
         if (outOfStock.has(d) || !storeDays.has(d)) excluded.add(d);
       }
       const spanDays = windowEnd - rateStart + 1;
+      let recent;
       if (excluded.size && spanDays - excluded.size < MIN_USABLE_DAYS) {
-        excluded = new Set(); // too little real trading history left to learn from
+        // Too little real, in-stock trading history inside the normal window -- the gap has
+        // outgrown the window itself. Reach further back, up to the full history lookback, for the
+        // most recent days this product actually had a chance to sell on, instead of giving up and
+        // averaging in a long run of zeros (see the store-revenue block above for the same idea).
+        excluded = new Set();
+        recent = [];
+        let oldest = null;
+        const reachBack = Math.max(skuStart, windowStart);
+        for (let d = windowEnd; d >= reachBack && recent.length < RATE_WINDOW_DAYS; d -= 1) {
+          if (!outOfStock.has(d) && storeDays.has(d)) { recent.unshift((byDay.get(d) || [0, 0])[0]); oldest = d; }
+        }
+        if (recent.length < MIN_USABLE_DAYS) {
+          // Not enough real, in-stock trading days anywhere in history either -- fall back to the
+          // plain calendar-window average (stock-outs/gaps count as zero) same as before.
+          recent = [];
+          for (let d = rateStart; d <= windowEnd; d += 1) recent.push((byDay.get(d) || [0, 0])[0]);
+        } else if (oldest !== null && oldest < rateStart) {
+          staleSkuCount += 1;
+        }
+      } else {
+        recent = [];
+        for (let d = rateStart; d <= windowEnd; d += 1) recent.push(excluded.has(d) ? null : (byDay.get(d) || [0, 0])[0]);
       }
       for (let d = rateStart; d <= windowEnd; d += 1) if (outOfStock.has(d) && excluded.has(d)) stockouts += 1;
       adjusted = stockouts > 0;
 
-      const recent = [];
-      for (let d = rateStart; d <= windowEnd; d += 1) recent.push(excluded.has(d) ? null : (byDay.get(d) || [0, 0])[0]);
       const level = windowMean(recent, RATE_WINDOW_DAYS);
       rate = level ? level.mean : 0;
       dataDays = level ? level.count : 0;
@@ -334,6 +432,9 @@ function buildForecast(payload, { source = 'fallback' } = {}) {
       stockoutDays: stockouts,
       stockoutAdjusted: adjusted,
     });
+  }
+  if (staleSkuCount > 0) {
+    warnings.push(`${staleSkuCount} product(s) have no recent sales in the last ${RATE_WINDOW_DAYS} days; their demand is estimated from older trading days instead.`);
   }
   items.sort((a, b) => {
     const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];

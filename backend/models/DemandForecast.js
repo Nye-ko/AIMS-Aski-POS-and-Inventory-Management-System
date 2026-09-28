@@ -103,7 +103,7 @@ const loadForecastInput = async (daysToForecast, asOf) => {
     sales: salesRows
       .filter((r) => skuById.has(r.productId))
       .map((r) => ({ sku: skuById.get(r.productId), date: r.date, quantity: r.quantity, revenue: r.revenue })),
-    dailyTotals: totalRows.map((r) => ({ date: r.date, gross: r.gross, discount: r.discount, net: r.net })),
+    dailyTotals: totalRows.map((r) => ({ date: r.date, gross: r.gross, discount: r.discount, net: r.net, simulated: r.simulated })),
     stockouts: [...stockoutsByProduct]
       .filter(([productId]) => skuById.has(productId))
       .flatMap(([productId, dates]) => dates.map((date) => ({ sku: skuById.get(productId), date }))),

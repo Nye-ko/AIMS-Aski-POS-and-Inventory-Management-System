@@ -135,15 +135,45 @@ const formatMany = async (products) => {
 };
 
 const ProductModel = {
-  // Fetch all products with supplier details & computed statuses for Inventory List
-  findAll: async () => {
-    const products = await prisma.product.findMany({
-      include: {
-        supplier: true,
-      },
-      orderBy: { id: 'asc' },
-    });
-    return formatMany(products);
+  // Fetch products with supplier details & computed statuses for Inventory List.
+  // Backward compatible: called with no args (or omitted page/limit), returns every product as a
+  // bare array, same as before — cashierPOS and ReceivingReportModal rely on this for their local
+  // full-catalog search. Passing page/limit switches to server-side search/category filtering +
+  // pagination and returns {data, total, page, pageSize} instead, used by the Inventory page.
+  findAll: async ({ page, limit, search, category } = {}) => {
+    if (!page && !limit) {
+      const products = await prisma.product.findMany({
+        include: { supplier: true },
+        orderBy: { id: 'asc' },
+      });
+      return formatMany(products);
+    }
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+    const where = {};
+    if (category && category !== 'All') where.category = category;
+    const term = (search || '').trim();
+    if (term) {
+      where.OR = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { barcode: { contains: term, mode: 'insensitive' } },
+        { supplier: { name: { contains: term, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [total, products] = await Promise.all([
+      prisma.product.count({ where }),
+      prisma.product.findMany({
+        where,
+        include: { supplier: true },
+        orderBy: { id: 'asc' },
+        skip: (pageNum - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return { data: await formatMany(products), total, page: pageNum, pageSize };
   },
 
   // Formatted rows for a specific set of product ids, in the same shape as findAll — used to

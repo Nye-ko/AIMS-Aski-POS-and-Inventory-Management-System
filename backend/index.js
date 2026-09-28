@@ -24,6 +24,7 @@ const DemandForecastModel = require('./models/DemandForecast');
 const ForecastAccuracyModel = require('./models/ForecastAccuracy');
 const FinanceModel = require('./models/FinanceModel');
 const { PurchaseOrderModel, PurchasingError } = require('./models/PurchaseOrder');
+const SupplierModel = require('./models/Supplier');
 const { buildPurchaseOrderWorkbook } = require('./services/purchaseOrderExcel');
 const { ReceivingReportModel } = require('./models/ReceivingReport');
 const { buildReceivingReportWorkbook } = require('./services/receivingReportExcel');
@@ -249,7 +250,8 @@ app.get('/api/audit-log', authenticateToken, requireAdmin, async (req, res) => {
 // 1. Get All Products (Includes supplier relations and computed status)
 app.get('/api/products', authenticateToken, requireRole(...ROLES.PRODUCT_LOOKUP), async (req, res) => {
   try {
-    const products = await ProductModel.findAll();
+    const { page, limit, search, category } = req.query;
+    const products = await ProductModel.findAll({ page, limit, search, category });
     res.json(products);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -418,36 +420,41 @@ app.get('/api/products/barcode/:code', authenticateToken, requireRole(...ROLES.P
   }
 });
 
-// 5. Get All Suppliers (For inventory dropdowns)
+// Maps supplier failures onto HTTP: typed errors carry their own status, anything unexpected is a 500.
+const sendSupplierError = (res, error, action) => {
+  console.error(`Error ${action}:`, error);
+  if (error instanceof SupplierModel.SupplierError) return res.status(error.status).json({ error: error.message });
+  return res.status(500).json({ error: `Failed to ${action}` });
+};
+
+// 5. Get All Suppliers (for inventory dropdowns and the Supplier Management page)
 app.get('/api/suppliers', authenticateToken, requireRole(...ROLES.INVENTORY_READ), async (req, res) => {
   try {
-    const suppliers = await prisma.supplier.findMany({
-      orderBy: { name: 'asc' },
-    });
+    const suppliers = await SupplierModel.findAll();
     res.json(suppliers);
   } catch (error) {
-    console.error('Error fetching suppliers:', error);
-    res.status(500).json({ error: 'Failed to fetch suppliers' });
+    sendSupplierError(res, error, 'fetch suppliers');
   }
 });
 
-// Days from placing an order with this supplier to receiving it; drives every product's reorder point.
-const MAX_LEAD_TIME_DAYS = 90;
+app.post('/api/suppliers', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const supplier = await SupplierModel.create(req.body);
+    res.status(201).json(supplier);
+  } catch (error) {
+    sendSupplierError(res, error, 'create supplier');
+  }
+});
+
+// Edits a supplier's details (name, contact info, and lead time -- lead time drives every one of its
+// products' reorder points). Partial update: only fields present in the body are changed.
 app.patch('/api/suppliers/:id', authenticateToken, requireRole(...ROLES.INVENTORY_WRITE), async (req, res) => {
   try {
-    const id = parseInt(req.params.id, 10);
-    const leadTimeDays = Number(req.body.leadTimeDays);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid supplier id' });
-    if (!Number.isInteger(leadTimeDays) || leadTimeDays < 1 || leadTimeDays > MAX_LEAD_TIME_DAYS) {
-      return res.status(400).json({ error: `Lead time must be a whole number of days from 1 to ${MAX_LEAD_TIME_DAYS}` });
-    }
-    const existing = await prisma.supplier.findUnique({ where: { id }, select: { id: true } });
-    if (!existing) return res.status(404).json({ error: 'Supplier not found' });
-    const supplier = await prisma.supplier.update({ where: { id }, data: { leadTimeDays } });
+    const supplier = await SupplierModel.update(req.params.id, req.body);
+    if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
     res.json(supplier);
   } catch (error) {
-    console.error('Error updating supplier:', error);
-    res.status(500).json({ error: 'Failed to update supplier' });
+    sendSupplierError(res, error, 'update supplier');
   }
 });
 

@@ -10,3 +10,10 @@ Terminal 3
 cd ai-service
 .\venv\Scripts\activate
 uvicorn main:app --reload --port 8000
+
+
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+
+npx prisma db push
+npx prisma generate

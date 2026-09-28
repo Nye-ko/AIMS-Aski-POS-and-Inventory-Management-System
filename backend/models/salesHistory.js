@@ -4,6 +4,9 @@ const { prisma } = require('./Product');
 // that day. Used by both the forecast and the accuracy grading so they always see the same history.
 // `since` is a coarse lower bound (a Date); callers apply their exact window. Voided sales are left
 // out entirely: the goods came back, so they were never real demand.
+// `simulated` (a day is true only if every transaction posted that day is tagged `SIM-*`, from a
+// synthetic-data-gap fill) lets the forecast engine still use these days for its trading-day level, but
+// leave them out of weekday-pattern learning: they carry no real day-of-week signal, only Poisson noise.
 const loadDailySales = async ({ since, timeZone }) => {
   const [salesRows, totalRows] = await Promise.all([
     prisma.$queryRaw`
@@ -20,7 +23,8 @@ const loadDailySales = async ({ since, timeZone }) => {
       SELECT to_char((t."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}::text, 'YYYY-MM-DD') AS "date",
              SUM(t.subtotal)::float AS "gross",
              SUM(t."discountAmount")::float AS "discount",
-             SUM(t."totalAmount")::float AS "net"
+             SUM(t."totalAmount")::float AS "net",
+             BOOL_AND(t."transactionNo" LIKE 'SIM-%') AS "simulated"
       FROM "Transaction" t
       WHERE t."createdAt" >= ${since}
         AND NOT EXISTS (SELECT 1 FROM "SaleVoid" v WHERE v."transactionId" = t.id)

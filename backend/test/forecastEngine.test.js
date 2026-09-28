@@ -34,8 +34,21 @@ test('empty history returns a valid response instead of throwing', () => {
   assert.ok(r.meta.warnings.length > 0);
 });
 
-test('forecast trajectory is flat daily revenue, not a ramp', () => {
-  const future = buildForecast(input).revenueTrajectory.filter((p) => p.actual === null);
+test('forecast trajectory is reshaped by weekday, not a ramp, and its total matches the flat projection', () => {
+  const result = buildForecast(input);
+  const future = result.revenueTrajectory.filter((p) => p.actual === null);
   assert.equal(future.length, 30);
-  assert.equal(new Set(future.map((p) => p.forecast)).size, 1);
+  // Same weekday always forecasts the same value (it's a repeating weekly shape, not a monotonic trend).
+  const byWeekday = new Map();
+  for (const p of future) {
+    const wd = new Date(`${p.date}T00:00:00Z`).getUTCDay();
+    if (!byWeekday.has(wd)) byWeekday.set(wd, []);
+    byWeekday.get(wd).push(p.forecast);
+  }
+  for (const values of byWeekday.values()) {
+    for (const v of values) assert.equal(v, values[0]);
+  }
+  // Reshaping only redistributes the same flat total across the week; it never changes the KPI totals.
+  const total = future.reduce((sum, p) => sum + p.forecast, 0);
+  assert.ok(Math.abs(total - result.kpis.projectedGross) < 1);
 });

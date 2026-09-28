@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CategoryIcon } from '../../utils/CategoryIcon';
 import PurchaseOrdersList from './PurchaseOrdersList';
+import SupplierManagement from './SupplierManagement';
 import ReceivingReportModal from './ReceivingReportModal';
 import PurchaseReturnModal from './PurchaseReturnModal';
 import StockHistoryModal from './StockHistoryModal';
@@ -50,47 +51,26 @@ const getStockValue = (product) => {
 
 export default function InventorySystem() {
   const [activeTab, setActiveTab] = useState('inventory');
-  const [products, setProducts] = useState([]);
+  // Full product catalog — lazily loaded (see loadFullProducts) and cached, null until first
+  // needed. The Inventory List table itself no longer needs this: it fetches its own
+  // paginated/searched slice directly (see InventoryPage). This cache still backs the features
+  // that genuinely need every product client-side: the category list, Add-Stock search, Export
+  // Inventory Sheet, the Purchase Order product picker, and Supplier Reports.
+  const [products, setProducts] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Fans out live stock_updated events to whichever child (InventoryPage's own page of rows)
+  // needs to patch its own local state — the socket connection itself lives here, once.
+  const [stockUpdateEvent, setStockUpdateEvent] = useState(null);
+  const fullProductsPromiseRef = useRef(null);
 
-  useEffect(() => {
-    fetchInitialData();
-  }, []);
-
-  // Live stock updates (sales, receiving reports, purchase returns, manual add/adjust) — patches
-  // the affected rows in place, or appends a brand-new product (e.g. created via a receiving
-  // report), so the list stays current without the user needing to refresh.
-  useEffect(() => {
-    const socket = io(SOCKET_SERVER_URL, { auth: { token: getAuthToken() } });
-    socket.on('stock_updated', ({ products: changedProducts }) => {
-      if (!Array.isArray(changedProducts) || changedProducts.length === 0) return;
-      setProducts((prev) => {
-        const byId = new Map(prev.map((p) => [p.id, p]));
-        for (const p of changedProducts) byId.set(p.id, p);
-        return [...byId.values()];
-      });
-    });
-    return () => socket.disconnect();
-  }, []);
-
-  const fetchInitialData = async () => {
+  const fetchSuppliers = async () => {
     setLoading(true);
     try {
-      const [productsRes, suppliersRes] = await Promise.all([
-        apiFetch(`${API_BASE_URL}/products`),
-        apiFetch(`${API_BASE_URL}/suppliers`)
-      ]);
-
-      if (!productsRes.ok) throw new Error(`Products endpoint returned status ${productsRes.status}`);
+      const suppliersRes = await apiFetch(`${API_BASE_URL}/suppliers`);
       if (!suppliersRes.ok) throw new Error(`Suppliers endpoint returned status ${suppliersRes.status}`);
-
-      const productsData = await productsRes.json();
-      const suppliersData = await suppliersRes.json();
-
-      setProducts(productsData);
-      setSuppliers(suppliersData);
+      setSuppliers(await suppliersRes.json());
       setError(null);
     } catch (err) {
       console.error("Database fetch error:", err);
@@ -99,6 +79,60 @@ export default function InventorySystem() {
       setLoading(false);
     }
   };
+
+  // Fetches (and caches) every product, deduping concurrent callers onto one in-flight request.
+  // Called on demand by the features listed above — not on initial page load.
+  const loadFullProducts = useCallback(async ({ force = false } = {}) => {
+    if (products && !force) return products;
+    if (fullProductsPromiseRef.current) return fullProductsPromiseRef.current;
+    const promise = apiFetch(`${API_BASE_URL}/products`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Products endpoint returned status ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        setProducts(data);
+        return data;
+      })
+      .finally(() => {
+        fullProductsPromiseRef.current = null;
+      });
+    fullProductsPromiseRef.current = promise;
+    return promise;
+  }, [products]);
+
+  // Re-fetches the full catalog only if something had actually loaded it already — a receiving
+  // report/purchase return saving shouldn't itself trigger the expensive full-table query.
+  const refreshFullProductsIfLoaded = useCallback(() => {
+    if (products !== null) loadFullProducts({ force: true });
+  }, [products, loadFullProducts]);
+
+  useEffect(() => {
+    fetchSuppliers();
+  }, []);
+
+  // Supplier Reports needs the full catalog too — load it as soon as that tab is opened.
+  useEffect(() => {
+    if (activeTab === 'reports') loadFullProducts();
+  }, [activeTab, loadFullProducts]);
+
+  // Live stock updates (sales, receiving reports, purchase returns, manual add/adjust): patch the
+  // cached full catalog in place if it's been loaded, and forward the event to InventoryPage so it
+  // can patch whichever of these products are on its currently-viewed page.
+  useEffect(() => {
+    const socket = io(SOCKET_SERVER_URL, { auth: { token: getAuthToken() } });
+    socket.on('stock_updated', ({ products: changedProducts }) => {
+      if (!Array.isArray(changedProducts) || changedProducts.length === 0) return;
+      setProducts((prev) => {
+        if (!prev) return prev;
+        const byId = new Map(prev.map((p) => [p.id, p]));
+        for (const p of changedProducts) byId.set(p.id, p);
+        return [...byId.values()];
+      });
+      setStockUpdateEvent({ products: changedProducts, ts: Date.now() });
+    });
+    return () => socket.disconnect();
+  }, []);
 
   if (loading) {
     return (
@@ -118,7 +152,7 @@ export default function InventorySystem() {
           <p className="text-rose-600 font-bold text-sm mb-2">Database Connection Error</p>
           <p className="text-slate-500 text-xs mb-4">{error}</p>
           <button
-            onClick={fetchInitialData}
+            onClick={fetchSuppliers}
             className="px-4 py-2 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs rounded-full shadow-md hover:shadow-lg hover:shadow-blue-500/30 transition-all cursor-pointer"
           >
             Retry Connection
@@ -183,6 +217,18 @@ export default function InventorySystem() {
           </button>
 
           <button
+            onClick={() => setActiveTab('suppliers')}
+            className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
+              activeTab === 'suppliers'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>Suppliers</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('members')}
             className={`flex flex-1 min-w-0 sm:flex-none flex-col sm:flex-row justify-center items-center gap-0.5 sm:gap-2 sm:shrink-0 whitespace-nowrap px-0.5 sm:px-4 py-1.5 sm:py-2 font-bold text-[9px] leading-tight sm:text-xs rounded-lg sm:rounded-xl transition-all cursor-pointer ${
               activeTab === 'members'
@@ -212,17 +258,19 @@ export default function InventorySystem() {
       <div>
         {activeTab === 'inventory' && (
           <InventoryPage
-            products={products}
+            products={products || []}
             setProducts={setProducts}
+            loadFullProducts={loadFullProducts}
+            stockUpdateEvent={stockUpdateEvent}
             suppliers={suppliers}
             exportToExcel={exportToExcel}
-            onDataChanged={fetchInitialData}
+            onDataChanged={refreshFullProductsIfLoaded}
           />
         )}
 
         {activeTab === 'reports' && (
           <ReportsPage
-            products={products}
+            products={products || []}
             setProducts={setProducts}
             suppliers={suppliers}
             exportToExcel={exportToExcel}
@@ -230,6 +278,10 @@ export default function InventorySystem() {
         )}
 
         {activeTab === 'ledger' && <LedgerReportPage exportToExcel={exportToExcel} />}
+
+        {activeTab === 'suppliers' && (
+          <SupplierManagement suppliers={suppliers} isLoading={loading} onSuppliersChanged={fetchSuppliers} />
+        )}
 
         {activeTab === 'members' && <MembersPage />}
 
@@ -258,7 +310,9 @@ function ToolbarButton({ icon: Icon, iconColor, label, onClick }) {
 // ==========================================
 // INVENTORY PAGE COMPONENT
 // ==========================================
-function InventoryPage({ products, setProducts, suppliers, exportToExcel, onDataChanged }) {
+const PRODUCTS_PAGE_SIZE = 50;
+
+function InventoryPage({ products, setProducts, loadFullProducts, stockUpdateEvent, suppliers, exportToExcel, onDataChanged }) {
   // Supervisors can browse and export inventory but not change it (matches the backend role guards).
   const { role } = useAuth();
   const canWrite = role === 'ADMIN' || role === 'INVENTORY';
@@ -270,10 +324,59 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
   const [isReceivingReportOpen, setIsReceivingReportOpen] = useState(false);
   const [isPurchaseReturnOpen, setIsPurchaseReturnOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
   const categoryMenuRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // The Product List table is paginated + searched/filtered server-side (see backend
+  // ProductModel.findAll) instead of holding and filtering the whole catalog client-side.
+  const [pageProducts, setPageProducts] = useState([]);
+  const [pageNum, setPageNum] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [tableLoading, setTableLoading] = useState(true);
+  const [tableError, setTableError] = useState(null);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PRODUCTS_PAGE_SIZE));
+
+  const fetchPage = useCallback(async () => {
+    setTableLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(pageNum), limit: String(PRODUCTS_PAGE_SIZE) });
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (selectedCategory !== 'All') params.set('category', selectedCategory);
+      const res = await apiFetch(`${API_BASE_URL}/products?${params}`);
+      if (!res.ok) throw new Error(`Products endpoint returned status ${res.status}`);
+      const body = await res.json();
+      setPageProducts(body.data);
+      setTotalCount(body.total);
+      setTableError(null);
+    } catch (err) {
+      console.error('Inventory table fetch error:', err);
+      setTableError(err.message);
+    } finally {
+      setTableLoading(false);
+    }
+  }, [pageNum, debouncedSearch, selectedCategory]);
+
+  useEffect(() => { fetchPage(); }, [fetchPage]);
+
+  // A new search/category narrows or widens the result set — always land back on page 1 for it.
+  useEffect(() => { setPageNum(1); }, [debouncedSearch, selectedCategory]);
+
+  // Live stock updates: patch only the rows already on this page (a change to a product elsewhere
+  // shows up next time this page/search is loaded, per design — see data.md-style notes above).
+  useEffect(() => {
+    if (!stockUpdateEvent) return;
+    setPageProducts((prev) => {
+      const byId = new Map(prev.map((p) => [p.id, p]));
+      let changed = false;
+      for (const p of stockUpdateEvent.products) {
+        if (byId.has(p.id)) { byId.set(p.id, p); changed = true; }
+      }
+      return changed ? [...byId.values()] : prev;
+    });
+  }, [stockUpdateEvent]);
 
   // Close the category dropdown when clicking outside of it
   useEffect(() => {
@@ -285,6 +388,12 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Debounce the search box so typing doesn't re-filter/re-render the whole table on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
 
   // Supplier / category dropdowns inside the "Add Product" form
   const [productSupplierMenuOpen, setProductSupplierMenuOpen] = useState(false);
@@ -368,7 +477,8 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
       const savedProduct = await response.json();
 
-      setProducts(prev => [savedProduct, ...prev]);
+      setProducts(prev => (prev ? [savedProduct, ...prev] : prev));
+      fetchPage();
       setFormData({ barcode: '', name: '', supplierId: '', category: '', currentStock: '', minStock: '', unitCost: '', sellingPrice: '' });
       setIsFormOpen(false);
     } catch (err) {
@@ -419,7 +529,8 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
 
       const updatedProduct = await response.json();
 
-      setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+      setProducts(prev => (prev ? prev.map(p => p.id === updatedProduct.id ? updatedProduct : p) : prev));
+      setPageProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
       resetStockForm();
       setIsAddStockOpen(false);
       alert("Stock added successfully!");
@@ -435,19 +546,31 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
     [products]
   );
 
-  const filteredProducts = products.filter(p => {
-    const matchesSearch =
-      p.name?.toLowerCase().includes(search.toLowerCase()) ||
-      p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
-      p.supplierName?.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Stable callbacks so memoized row components don't re-render just because InventoryPage did.
+  // Patch both the visible page and the full-catalog cache (if it's been loaded elsewhere).
+  const handleMinStockUpdated = useCallback((updated) => {
+    setPageProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
+    setProducts((prev) => (prev ? prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)) : prev));
+  }, [setProducts]);
+  const handleExpiryUpdated = useCallback((updated) => {
+    setPageProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
+    setProducts((prev) => (prev ? prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)) : prev));
+  }, [setProducts]);
+  const handleOpenHistory = useCallback((p) => setHistoryProduct(p), []);
+  const handleOpenAdjust = useCallback((p) => setAdjustProduct(p), []);
 
   // Every product (the on-screen search/category filter is ignored) goes into the file: an "All Products" sheet,
-  // then one sheet per category. Product IDs are internal, so they are not exported.
-  const handleExportInventorySheet = () => {
-    const rows = products.map((p) => {
+  // then one sheet per category. Product IDs are internal, so they are not exported. The table itself only
+  // holds one page of products, so this fetches the full catalog on demand instead of reusing that state.
+  const handleExportInventorySheet = async () => {
+    let all;
+    try {
+      all = await loadFullProducts();
+    } catch (err) {
+      alert(`Error loading products to export: ${err.message}`);
+      return;
+    }
+    const rows = all.map((p) => {
       const stock = getStockValue(p);
       return {
         'Barcode': p.barcode,
@@ -480,9 +603,10 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                   setIsAddStockOpen(true);
                   setIsFormOpen(false);
                   resetStockForm();
+                  loadFullProducts();
                 }}
               />
-              <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => setIsPurchaseOrderOpen(true)} />
+              <ToolbarButton icon={FileSpreadsheet} iconColor="text-amber-600" label="Create Purchase Order" onClick={() => { setIsPurchaseOrderOpen(true); loadFullProducts(); }} />
               <ToolbarButton icon={Truck} iconColor="text-teal-600" label="Create Receiving Report" onClick={() => setIsReceivingReportOpen(true)} />
               <ToolbarButton icon={RotateCcw} iconColor="text-rose-600" label="Create Purchase Return" onClick={() => setIsPurchaseReturnOpen(true)} />
             </>
@@ -589,7 +713,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
                 <div className="relative" ref={productCategoryMenuRef}>
                   <button
                     type="button"
-                    onClick={() => setProductCategoryMenuOpen((o) => !o)}
+                    onClick={() => { setProductCategoryMenuOpen((o) => !o); loadFullProducts(); }}
                     className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-3 py-1.5 sm:px-4 sm:py-2.5 text-[11px] sm:text-xs shadow-sm hover:border-blue-500/60 transition-all cursor-pointer"
                   >
                     <span className={`flex items-center gap-2 truncate ${formData.category ? 'text-slate-200' : 'text-slate-500'}`}>
@@ -810,7 +934,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
             <div className="relative shrink-0" ref={categoryMenuRef}>
               <button
                 type="button"
-                onClick={() => setCategoryMenuOpen((o) => !o)}
+                onClick={() => { setCategoryMenuOpen((o) => !o); loadFullProducts(); }}
                 className="flex items-center gap-1.5 sm:gap-2 bg-white border border-slate-200/80 shadow-sm text-slate-600 pl-2.5 pr-2.5 sm:pl-3 sm:pr-3 py-1.5 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-semibold hover:border-blue-300 transition-colors cursor-pointer"
               >
                 {selectedCategory === 'All' ? (
@@ -857,7 +981,7 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
             </div>
           </div>
 
-          <span className="order-2 ml-auto sm:ml-0 sm:order-3 inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />{filteredProducts.length} items</span>
+          <span className="order-2 ml-auto sm:ml-0 sm:order-3 inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px] font-bold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />{totalCount} items</span>
         </div>
 
         <div className="relative z-10 overflow-auto max-h-[700px] rounded-b-3xl">
@@ -877,98 +1001,56 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredProducts.length > 0 ? filteredProducts.map((p) => {
-                const stockVal = getStockValue(p);
-                const statusText = p.status || (stockVal > 10 ? 'In Stock' : stockVal > 0 ? 'Low Stock' : 'Out of Stock');
-                const isExpired = statusText === 'Expired';
-                const statusBadge = isExpired
-                  ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
-                  : statusText === 'Low Stock'
-                  ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-                  : stockVal > 0
-                  ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                  : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
-                const accentBar = isExpired ? 'bg-red-500' : statusText === 'Low Stock' ? 'bg-amber-400' : stockVal > 0 ? 'bg-blue-500' : 'bg-rose-400';
-                const stockTone = stockVal <= 0 ? 'bg-rose-50 text-rose-700 ring-rose-100' : statusText === 'Low Stock' ? 'bg-amber-50 text-amber-700 ring-amber-100' : 'bg-blue-50 text-blue-700 ring-blue-100';
-
-                return (
-                  <tr key={p.id} className="group hover:bg-blue-50/40 transition-colors">
-                    <td className="relative px-3 py-2 sm:px-4 sm:py-3.5">
-                      <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity ${accentBar}`} />
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
-                          <CategoryIcon category={p.category} className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-900 truncate">{p.name}</p>
-                          <p className="text-[10px] font-mono text-slate-400 truncate">{p.barcode}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-slate-500">{p.supplierName || 'N/A'}</td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5"><span className="inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{p.category}</span></td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center"><span className={`inline-flex min-w-[36px] justify-center rounded-lg px-2 py-1 text-[12px] font-extrabold tabular-nums ring-1 ${stockTone}`}>{stockVal}</span></td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">
-                      {canWrite ? (
-                        <MinStockEditor product={p} onUpdated={(updated) => {
-                          setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, minStock: updated.minStock } : x)));
-                        }} />
-                      ) : (
-                        <span className="font-semibold text-slate-700">{p.minStock ?? 10}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center tabular-nums text-slate-500">₱{Number(p.unitCost || 0).toFixed(2)}</td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center font-extrabold tabular-nums text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">
-                      {canWrite ? (
-                        <ExpiryEditor product={p} onUpdated={(updated) => {
-                          setProducts((prev) => prev.map((x) => (x.id === updated.id ? { ...x, expiryDate: updated.expiryDate } : x)));
-                        }} />
-                      ) : (
-                        <span className="font-semibold text-slate-700">
-                          {p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : '—'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-right whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                        {statusText}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setHistoryProduct(p)}
-                        title="Stock history"
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:border-slate-300 text-[11px] font-bold cursor-pointer transition-colors"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                        History
-                      </button>
-                      {canWrite && (
-                        <button
-                          type="button"
-                          onClick={() => setAdjustProduct(p)}
-                          title="Adjust stock"
-                          className="ml-1.5 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[11px] font-bold cursor-pointer transition-colors"
-                        >
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
-                          Adjust
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              }) : (
+              {tableError ? (
+                <tr>
+                  <td colSpan="10" className="px-4 py-14 text-center text-rose-500 font-semibold">
+                    {tableError}
+                  </td>
+                </tr>
+              ) : pageProducts.length > 0 ? pageProducts.map((p) => (
+                <ProductRow
+                  key={p.id}
+                  product={p}
+                  canWrite={canWrite}
+                  onMinStockUpdated={handleMinStockUpdated}
+                  onExpiryUpdated={handleExpiryUpdated}
+                  onOpenHistory={handleOpenHistory}
+                  onOpenAdjust={handleOpenAdjust}
+                />
+              )) : (
                 <tr>
                   <td colSpan="10" className="px-4 py-14 text-center text-slate-400 font-semibold">
-                    No products found.
+                    {tableLoading ? 'Loading products…' : 'No products found.'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination controls */}
+        <div className="flex items-center justify-between gap-3 px-3 sm:px-5 py-3 border-t border-slate-100">
+          <span className="text-[11px] font-semibold text-slate-500">
+            Page {pageNum} of {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPageNum((n) => Math.max(1, n - 1))}
+              disabled={pageNum <= 1 || tableLoading}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setPageNum((n) => Math.min(totalPages, n + 1))}
+              disabled={pageNum >= totalPages || tableLoading}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -985,7 +1067,10 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
           key={adjustProduct.id}
           product={adjustProduct}
           onClose={() => setAdjustProduct(null)}
-          onAdjusted={(updated) => setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+          onAdjusted={(updated) => {
+            setPageProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+            setProducts((prev) => (prev ? prev.map((x) => (x.id === updated.id ? updated : x)) : prev));
+          }}
         />
       )}
 
@@ -998,24 +1083,110 @@ function InventoryPage({ products, setProducts, suppliers, exportToExcel, onData
       <ReceivingReportModal
         isOpen={isReceivingReportOpen}
         onClose={() => setIsReceivingReportOpen(false)}
-        onSaved={onDataChanged}
+        onSaved={() => { onDataChanged(); fetchPage(); }}
       />
 
       <PurchaseReturnModal
         isOpen={isPurchaseReturnOpen}
         onClose={() => setIsPurchaseReturnOpen(false)}
-        onSaved={onDataChanged}
+        onSaved={() => { onDataChanged(); fetchPage(); }}
       />
     </div>
   );
 }
 
 /**
+ * One row of the Product List table. Memoized so a re-render of InventoryPage (a search
+ * keystroke, a socket stock_updated event, opening a modal) only re-renders rows whose own
+ * product/canWrite actually changed, instead of all of them.
+ */
+const ProductRow = React.memo(function ProductRow({ product: p, canWrite, onMinStockUpdated, onExpiryUpdated, onOpenHistory, onOpenAdjust }) {
+  const stockVal = getStockValue(p);
+  const statusText = p.status || (stockVal > 10 ? 'In Stock' : stockVal > 0 ? 'Low Stock' : 'Out of Stock');
+  const isExpired = statusText === 'Expired';
+  const statusBadge = isExpired
+    ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
+    : statusText === 'Low Stock'
+    ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+    : stockVal > 0
+    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+    : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
+  const accentBar = isExpired ? 'bg-red-500' : statusText === 'Low Stock' ? 'bg-amber-400' : stockVal > 0 ? 'bg-blue-500' : 'bg-rose-400';
+  const stockTone = stockVal <= 0 ? 'bg-rose-50 text-rose-700 ring-rose-100' : statusText === 'Low Stock' ? 'bg-amber-50 text-amber-700 ring-amber-100' : 'bg-blue-50 text-blue-700 ring-blue-100';
+
+  return (
+    <tr className="group hover:bg-blue-50/40 transition-colors">
+      <td className="relative px-3 py-2 sm:px-4 sm:py-3.5">
+        <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity ${accentBar}`} />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-slate-100 text-indigo-600 border border-slate-200/60 flex items-center justify-center shrink-0">
+            <CategoryIcon category={p.category} className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900 truncate">{p.name}</p>
+            <p className="text-[10px] font-mono text-slate-400 truncate">{p.barcode}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-slate-500">{p.supplierName || 'N/A'}</td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5"><span className="inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{p.category}</span></td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center"><span className={`inline-flex min-w-[36px] justify-center rounded-lg px-2 py-1 text-[12px] font-extrabold tabular-nums ring-1 ${stockTone}`}>{stockVal}</span></td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">
+        {canWrite ? (
+          <MinStockEditor product={p} onUpdated={onMinStockUpdated} />
+        ) : (
+          <span className="font-semibold text-slate-700">{p.minStock ?? 10}</span>
+        )}
+      </td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center tabular-nums text-slate-500">₱{Number(p.unitCost || 0).toFixed(2)}</td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center font-extrabold tabular-nums text-slate-900">₱{Number(p.sellingPrice || 0).toFixed(2)}</td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-center">
+        {canWrite ? (
+          <ExpiryEditor product={p} onUpdated={onExpiryUpdated} />
+        ) : (
+          <span className="font-semibold text-slate-700">
+            {p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : '—'}
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-right whitespace-nowrap">
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+          {statusText}
+        </span>
+      </td>
+      <td className="px-3 py-2 sm:px-4 sm:py-3.5 text-right whitespace-nowrap">
+        <button
+          type="button"
+          onClick={() => onOpenHistory(p)}
+          title="Stock history"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:border-slate-300 text-[11px] font-bold cursor-pointer transition-colors"
+        >
+          <History className="w-3.5 h-3.5" />
+          History
+        </button>
+        {canWrite && (
+          <button
+            type="button"
+            onClick={() => onOpenAdjust(p)}
+            title="Adjust stock"
+            className="ml-1.5 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[11px] font-bold cursor-pointer transition-colors"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Adjust
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+});
+
+/**
  * Inline editable expiry-date input. PATCHes /api/products/:id on change,
  * which lets the backend detect crossings into the expiry warning window
  * and fire the alert email.
  */
-function ExpiryEditor({ product, onUpdated }) {
+const ExpiryEditor = React.memo(function ExpiryEditor({ product, onUpdated }) {
   const toInput = (v) => {
     if (!v) return '';
     const d = new Date(v);
@@ -1062,14 +1233,14 @@ function ExpiryEditor({ product, onUpdated }) {
       {err && <span className="text-[10px] text-rose-600 font-semibold">{err}</span>}
     </div>
   );
-}
+});
 
 /**
  * Inline editable min-stock (reorder level) input. PATCHes /api/products/:id
  * on change — this is the threshold the low-stock alert system compares
  * current stock against (see backend/services/lowStockAlerts.js).
  */
-function MinStockEditor({ product, onUpdated }) {
+const MinStockEditor = React.memo(function MinStockEditor({ product, onUpdated }) {
   const [value, setValue] = React.useState(product.minStock ?? 10);
   const [saving, setSaving] = React.useState(false);
   const [err, setErr] = React.useState('');
@@ -1111,7 +1282,7 @@ function MinStockEditor({ product, onUpdated }) {
       {err && <span className="text-[10px] text-rose-600 font-semibold">{err}</span>}
     </div>
   );
-}
+});
 
 // ==========================================
 // SUPPLIER REPORTS PAGE COMPONENT
